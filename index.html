@@ -211,8 +211,16 @@ function carica() {
   return { attivita: [], scorte: [] };
 }
 
-function salva() {
+// Salva solo su questo dispositivo.
+function salvaLocale() {
   try { localStorage.setItem(KEY, JSON.stringify(dati)); } catch (e) { /* vedi README */ }
+}
+
+// Salva su questo dispositivo e, se la condivisione è attiva, la manda agli altri.
+function salva() {
+  salvaLocale();
+  if (nube.sincronizza) nube.sincronizza();
+  else if (nube.stato === 'offline') scriviFlag(FLAG_SPORCO, true);
 }
 
 const $ = (s) => document.querySelector(s);
@@ -255,13 +263,14 @@ function renderGenerale() {
         ${u ? urgentiStanza.map((a) => rigaAttivita(a, true)).join('') : '<p class="vuoto" style="padding:0 0 10px">Nessuna cosa urgente.</p>'}
       </div>`;
     }).join('')}
+    ${htmlNube()}
     <h2>Dati</h2>
     <div class="card" style="padding:14px">
       <button class="link" data-action="esporta">Esporta JSON</button>
       &nbsp;·&nbsp;
       <label class="link">Importa JSON<input type="file" accept="application/json,.json" id="importa"></label>
     </div>
-    <h2>Google Drive</h2>
+    ${nube.stato === 'attiva' ? '' : `<h2>Google Drive</h2>
     <div class="card" style="padding:14px">
       ${driveCollegato()
         ? `<button class="link" data-action="drive-carica" ${driveOccupato ? 'disabled' : ''}>Carica su Drive</button>
@@ -271,7 +280,7 @@ function renderGenerale() {
            <button class="link" data-action="drive-scollega" style="color:var(--red)" ${driveOccupato ? 'disabled' : ''}>Scollega</button>`
         : `<button class="link" data-action="drive-collega" ${driveOccupato ? 'disabled' : ''}>Collega Google Drive</button>`}
       ${driveMsg ? `<p class="sec" style="margin:10px 0 0">${esc(driveMsg)}</p>` : ''}
-    </div>
+    </div>`}
   `;
 }
 
@@ -454,6 +463,8 @@ document.addEventListener('click', (e) => {
       eseguiDrive(driveScarica);
       return;
     case 'drive-scollega': driveScollega(); return;
+    case 'cloud-accedi': accediNube(); return;
+    case 'cloud-esci': esciNube(); return;
     default: return;
   }
   salva();
@@ -498,6 +509,7 @@ document.addEventListener('change', (e) => {
     .then((t) => {
       const j = JSON.parse(t);
       if (!Array.isArray(j.attivita) || !Array.isArray(j.scorte)) throw new Error('formato non valido');
+      if (nube.stato === 'attiva' && !confirm('La condivisione è attiva: importando questo file sostituirai le liste anche sugli altri telefoni. Continuare?')) return;
       dati = normalizza(j);
       salva();
       render();
@@ -641,8 +653,228 @@ function eseguiDrive(azione) {
     .finally(() => { driveOccupato = false; render(); });
 }
 
+/* ---------- Condivisione con Firebase ----------
+   Le liste stanno in Cloud Firestore (collezioni "attivita" e "scorte", un documento per voce),
+   così Claudio e Monica vedono le stesse cose e le modifiche arrivano subito.
+   Le regole del database (pubblicate nella console Firebase) lasciano entrare solo i due account.
+   La chiave API di un'app web è un identificativo pubblico: la protezione sono le regole. */
+
+const FB_CONFIG = {
+  apiKey: 'AIzaSyBESayIo0hrpfAHWcX0yCHijq7vEx7Qk_0',
+  authDomain: 'casa-511922.firebaseapp.com',
+  projectId: 'casa-511922',
+  storageBucket: 'casa-511922.firebasestorage.app',
+  messagingSenderId: '144660060564',
+  appId: '1:144660060564:web:8590c8df572290d85f5781',
+};
+const FB_VERSIONE = '11.0.2';
+const FLAG_INIT = 'casa.cloud.init';
+const FLAG_SPORCO = 'casa.cloud.sporco';
+const TIPI_CLOUD = ['attivita', 'scorte'];
+
+// stato: caricamento | offline | sconnesso | connessione | attiva
+const nube = { stato: 'caricamento', utente: '', msg: '', pronta: false, api: null, sincronizza: null };
+const ultimoCloud = { attivita: new Map(), scorte: new Map() };
+let renderRimandato = false;
+
+const stabile = (o) => JSON.stringify(Object.keys(o).sort().reduce((r, k) => { r[k] = o[k]; return r; }, {}));
+
+function leggiFlag(k) {
+  try { return localStorage.getItem(k) === '1'; } catch (e) { return false; }
+}
+
+function scriviFlag(k, v) {
+  try { v ? localStorage.setItem(k, '1') : localStorage.removeItem(k); } catch (e) { /* ignora */ }
+}
+
+function normalizzaLista(tipo, lista) {
+  const n = normalizza(tipo === 'attivita' ? { attivita: lista, scorte: [] } : { attivita: [], scorte: lista });
+  return tipo === 'attivita'
+    ? n.attivita.sort((a, b) => String(a.creataIl).localeCompare(String(b.creataIl)) || a.id.localeCompare(b.id))
+    : n.scorte.sort((a, b) => a.nome.localeCompare(b.nome, 'it') || a.id.localeCompare(b.id));
+}
+
+function unisciListe(remote, locali) {
+  const ids = new Set(remote.map((x) => x.id));
+  return remote.concat(locali.filter((x) => !ids.has(x.id)));
+}
+
+function messaggioErroreNube(e) {
+  const c = (e && e.code) || '';
+  if (c.includes('popup-closed') || c.includes('cancelled-popup')) return 'Accesso annullato.';
+  if (c.includes('popup-blocked')) return 'Il browser ha bloccato la finestra di accesso: riprova.';
+  if (c.includes('permission-denied')) return "Questo account non è autorizzato: accedi con l'account di Claudio o di Monica.";
+  if (c.includes('unauthorized-domain')) return 'Questo indirizzo non è autorizzato in Firebase.';
+  if (c.includes('network')) return 'Nessuna connessione: riprova più tardi.';
+  return (e && e.message) || 'Operazione non riuscita.';
+}
+
+function htmlNube() {
+  let corpo;
+  if (nube.stato === 'attiva') {
+    corpo = `<p style="margin:0 0 8px">Condiviso. Sei collegato come <b>${esc(nube.utente)}</b>: le modifiche arrivano subito agli altri telefoni.</p>
+      <button class="link" data-action="cloud-esci" style="color:var(--red)">Esci</button>`;
+  } else if (nube.stato === 'sconnesso') {
+    corpo = `<p style="margin:0 0 8px">Accedi con Google per condividere le liste con Claudio e Monica.</p>
+      <button class="link" data-action="cloud-accedi">Accedi con Google</button>`;
+  } else if (nube.stato === 'offline') {
+    corpo = '<p style="margin:0">Condivisione non disponibile: serve la connessione a internet. Intanto puoi usare l\'app: le modifiche restano su questo telefono.</p>';
+  } else {
+    corpo = `<p style="margin:0">${nube.stato === 'connessione' ? 'Collegamento in corso…' : 'Caricamento…'}</p>`;
+  }
+  return `<h2>Condivisione</h2>
+    <div class="card" style="padding:14px">${corpo}${nube.msg ? `<p class="sec" style="margin:10px 0 0">${esc(nube.msg)}</p>` : ''}</div>`;
+}
+
+// Va chiamata direttamente dal clic: il popup di Google lo richiede.
+function accediNube() {
+  if (!nube.api) return;
+  nube.msg = '';
+  nube.api.accedi().catch((e) => {
+    nube.stato = 'sconnesso';
+    nube.msg = messaggioErroreNube(e);
+    render();
+  });
+}
+
+function esciNube() {
+  if (nube.api) nube.api.esci();
+}
+
+// Durante una modifica ricevuta dagli altri non ridisegna la pagina se stai scrivendo in un campo.
+function renderSicuro() {
+  const a = document.activeElement;
+  if (a && a.matches && a.matches('input, select, textarea') && a.closest('form')) renderRimandato = true;
+  else render();
+}
+
+document.addEventListener('focusout', () => {
+  setTimeout(() => {
+    const a = document.activeElement;
+    if (renderRimandato && !(a && a.closest && a.closest('form'))) { renderRimandato = false; render(); }
+  }, 150);
+});
+
+async function avviaNube() {
+  let fbApp; let fbAuth; let fbStore;
+  try {
+    const base = `https://www.gstatic.com/firebasejs/${FB_VERSIONE}`;
+    [fbApp, fbAuth, fbStore] = await Promise.all([
+      import(`${base}/firebase-app.js`),
+      import(`${base}/firebase-auth.js`),
+      import(`${base}/firebase-firestore.js`),
+    ]);
+  } catch (e) {
+    nube.stato = 'offline';
+    render();
+    return;
+  }
+
+  const { initializeApp } = fbApp;
+  const { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } = fbAuth;
+  const { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+    collection, doc, setDoc, deleteDoc, getDocs, onSnapshot } = fbStore;
+
+  const app = initializeApp(FB_CONFIG);
+  const auth = getAuth(app);
+  const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  let spegni = [];
+
+  const errore = (e) => {
+    nube.msg = messaggioErroreNube(e);
+    if (e && e.code === 'permission-denied') signOut(auth);
+    render();
+  };
+
+  // Manda al database solo le voci cambiate o eliminate rispetto all'ultimo stato noto.
+  const sincronizza = () => {
+    if (!nube.pronta) return;
+    for (const t of TIPI_CLOUD) {
+      const correnti = new Map(dati[t].map((x) => [x.id, x]));
+      for (const [id, x] of correnti) {
+        const s = stabile(x);
+        if (ultimoCloud[t].get(id) !== s) {
+          ultimoCloud[t].set(id, s);
+          setDoc(doc(db, t, id), x).catch(errore);
+        }
+      }
+      for (const id of [...ultimoCloud[t].keys()]) {
+        if (!correnti.has(id)) {
+          ultimoCloud[t].delete(id);
+          deleteDoc(doc(db, t, id)).catch(errore);
+        }
+      }
+    }
+  };
+
+  const avvia = async () => {
+    try {
+      const remote = {};
+      for (const t of TIPI_CLOUD) {
+        const snap = await getDocs(collection(db, t));
+        remote[t] = normalizzaLista(t, snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+      }
+      const haLocali = dati.attivita.length + dati.scorte.length > 0;
+      const daChiedere = haLocali && (!leggiFlag(FLAG_INIT) || leggiFlag(FLAG_SPORCO));
+      const unire = daChiedere && confirm(
+        'Vuoi aggiungere alle liste condivise anche i dati già presenti su questo telefono?\n\nOK = aggiungili\nAnnulla = usa solo le liste condivise',
+      );
+      for (const t of TIPI_CLOUD) {
+        ultimoCloud[t] = new Map(remote[t].map((x) => [x.id, stabile(x)]));
+        dati[t] = unire ? unisciListe(remote[t], normalizzaLista(t, dati[t])) : remote[t];
+      }
+      scriviFlag(FLAG_INIT, true);
+      scriviFlag(FLAG_SPORCO, false);
+      nube.pronta = true;
+      nube.stato = 'attiva';
+      nube.msg = '';
+      salvaLocale();
+      sincronizza();
+      render();
+      for (const t of TIPI_CLOUD) {
+        spegni.push(onSnapshot(collection(db, t), (snap) => {
+          const lista = normalizzaLista(t, snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+          ultimoCloud[t] = new Map(lista.map((x) => [x.id, stabile(x)]));
+          dati[t] = lista;
+          salvaLocale();
+          renderSicuro();
+        }, errore));
+      }
+    } catch (e) {
+      nube.pronta = false;
+      nube.stato = 'sconnesso';
+      errore(e);
+    }
+  };
+
+  nube.api = {
+    accedi: () => signInWithPopup(auth, provider),
+    esci: () => signOut(auth),
+  };
+  nube.sincronizza = sincronizza;
+
+  onAuthStateChanged(auth, (utente) => {
+    spegni.forEach((f) => f());
+    spegni = [];
+    nube.pronta = false;
+    if (!utente) {
+      nube.utente = '';
+      nube.stato = 'sconnesso';
+      render();
+      return;
+    }
+    nube.utente = utente.email || '';
+    nube.stato = 'connessione';
+    render();
+    avvia();
+  });
+}
+
 render();
 vaiTab('generale');
+avviaNube();
 </script>
 </body>
 </html>
