@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Casa">
+<meta name="theme-color" content="#f2f2f7">
+<title>Casa</title>
+<link rel="manifest" href="manifest.webmanifest">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --card: rgba(255, 255, 255, .72);
+    --text: #000;
+    --sec: #8e8e93;
+    --accent: #007aff;
+    --red: #ff3b30;
+    --orange: #ff9500;
+    --sep: rgba(60, 60, 67, .18);
+    --r: 18px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #000;
+      --card: rgba(44, 44, 46, .7);
+      --text: #fff;
+      --sec: #8e8e93;
+      --sep: rgba(84, 84, 88, .6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #000;
+    --card: rgba(44, 44, 46, .7);
+    --text: #fff;
+    --sec: #8e8e93;
+    --sep: rgba(84, 84, 88, .6);
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  input, select { font: inherit; color: inherit; }
+
+  main { padding: 8px 16px; max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 34px; font-weight: 700; margin: 12px 0 4px; }
+  h2 { font-size: 20px; font-weight: 700; margin: 22px 4px 8px; }
+  .data, .sec { color: var(--sec); font-size: 14px; }
+  .vuoto { color: var(--sec); margin: 6px 0; }
+
+  .card {
+    background: var(--card);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: .5px solid rgba(255, 255, 255, .4);
+    border-radius: var(--r);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, .06);
+    padding: 4px 14px;
+    margin-bottom: 12px;
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .stat { padding: 14px; }
+  .stat b { display: block; font-size: 30px; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 13px; color: var(--sec); }
+  .stat.largo { grid-column: 1 / -1; }
+
+  .riga { display: flex; align-items: center; gap: 10px; padding: 11px 0; min-height: 44px; }
+  .riga + .riga { border-top: .5px solid var(--sep); }
+  .stanza-btn {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    width: 100%; background: none; border: 0; text-align: left; padding: 12px 0; min-height: 44px;
+  }
+  .stanza-btn + .stanza-btn { border-top: .5px solid var(--sep); }
+  .titolo { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .link { color: var(--accent); background: none; border: 0; padding: 0; }
+  .link input { display: none; }
+
+  .chips {
+    display: flex; gap: 8px; overflow-x: auto; padding: 6px 0 10px;
+    scrollbar-width: none;
+  }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: none; border: .5px solid rgba(255, 255, 255, .4); border-radius: 999px;
+    padding: 8px 14px; background: var(--card);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  .chip.on { background: var(--accent); color: #fff; }
+
+  .check {
+    width: 26px; height: 26px; flex: none; border-radius: 50%;
+    border: 2px solid var(--accent); background: none;
+    display: grid; place-items: center; color: #fff; font-weight: 700;
+  }
+  .att.fatta .check { background: var(--accent); }
+  .att.fatta .titolo { text-decoration: line-through; color: var(--sec); }
+  .stelle { color: var(--orange); font-size: 13px; letter-spacing: 1px; }
+  .del { border: 0; background: none; color: var(--red); font-size: 22px; padding: 4px 8px; line-height: 1; }
+
+  .scorta .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .scorta.bassa .titolo { color: var(--red); }
+  .tondo {
+    width: 32px; height: 32px; flex: none; border: 0; border-radius: 50%;
+    background: rgba(120, 120, 128, .16); font-size: 20px; line-height: 1;
+    display: grid; place-items: center;
+  }
+  .tondo.primo { background: var(--accent); color: #fff; }
+  .qta { min-width: 28px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .form { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+  .form input, .form select {
+    background: rgba(120, 120, 128, .12); border: 0; border-radius: 12px;
+    padding: 12px; width: 100%;
+  }
+  .due { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .primario {
+    background: var(--accent); color: #fff; border: 0; border-radius: 12px;
+    padding: 12px; font-weight: 600;
+  }
+
+  .tabbar {
+    position: fixed; left: 12px; right: 12px;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    max-width: 616px; margin: 0 auto;
+    display: flex; justify-content: space-around; padding: 6px;
+    border-radius: 26px;
+    background: var(--card);
+    backdrop-filter: blur(28px) saturate(200%);
+    -webkit-backdrop-filter: blur(28px) saturate(200%);
+    border: .5px solid rgba(255, 255, 255, .45);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .12);
+  }
+  .tab {
+    flex: 1; border: 0; background: none; border-radius: 18px; padding: 6px 0;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    color: var(--sec); font-size: 11px;
+  }
+  .tab .ico { font-size: 22px; line-height: 1.1; }
+  .tab.on { color: var(--accent); background: rgba(120, 120, 128, .14); }
+</style>
+</head>
+<body>
+<main>
+  <section id="generale" class="pagina" hidden></section>
+  <section id="stanze" class="pagina" hidden></section>
+  <section id="scorte" class="pagina" hidden></section>
+</main>
+
+<nav class="tabbar">
+  <button class="tab" data-tab="generale"><span class="ico">🏠</span><span>Generale</span></button>
+  <button class="tab" data-tab="stanze"><span class="ico">🧹</span><span>Stanze</span></button>
+  <button class="tab" data-tab="scorte"><span class="ico">📦</span><span>Scorte</span></button>
+</nav>
+
+<script>
+const STANZE = [
+  { id: 'lavanderia', nome: 'Lavanderia', icona: '🧺' },
+  { id: 'cucina', nome: 'Cucina', icona: '🍴' },
+  { id: 'ingresso', nome: 'Ingresso', icona: '🚪' },
+  { id: 'sala', nome: 'Sala', icona: '🛋️' },
+  { id: 'bagno', nome: 'Bagno', icona: '🚿' },
+  { id: 'camera', nome: 'Camera da letto', icona: '🛏️' },
+];
+
+const URG = {
+  3: { etichetta: 'Urgenti', singolare: 'Urgente', sugg: 'Da fare subito' },
+  2: { etichetta: 'Meno urgenti', singolare: 'Meno urgente', sugg: 'Entro questa settimana' },
+  1: { etichetta: 'Facoltativi', singolare: 'Facoltativo', sugg: 'Se hai tempo' },
+};
+
+const KEY = 'casa.v1';
+let dati = carica();
+let stanzaSel = 'cucina';
+
+function carica() {
+  try {
+    const r = localStorage.getItem(KEY);
+    if (r) {
+      const j = JSON.parse(r);
+      if (Array.isArray(j.attivita) && Array.isArray(j.scorte)) return j;
+    }
+  } catch (e) { /* storage non disponibile: si parte vuoti */ }
+  return { attivita: [], scorte: [] };
+}
+
+function salva() {
+  try { localStorage.setItem(KEY, JSON.stringify(dati)); } catch (e) { /* vedi README */ }
+}
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const trova = (lista, id) => lista.find((x) => x.id === id);
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+function render() {
+  renderGenerale();
+  renderStanze();
+  renderScorte();
+}
+
+function renderGenerale() {
+  const urgenti = dati.attivita.filter((a) => !a.fatta && a.urgenza === 3).length;
+  const fatte = dati.attivita.filter((a) => a.fatta).length;
+  const esaurimento = dati.scorte.filter((s) => s.quantita <= s.minimo).length;
+  const oggi = cap(new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' }));
+
+  $('#generale').innerHTML = `
+    <h1>Casa</h1>
+    <p class="data">${esc(oggi)}</p>
+    <div class="grid">
+      <div class="card stat"><b>${urgenti}</b><span>Urgenti ancora da fare</span></div>
+      <div class="card stat"><b>${fatte} / ${dati.attivita.length}</b><span>Attività completate</span></div>
+      <div class="card stat largo"><b>${esaurimento}</b><span>Scorte in esaurimento</span></div>
+    </div>
+    <h2>Stanza per stanza</h2>
+    <p class="sec">Per ogni stanza vedi le cose urgenti ancora da fare.</p>
+    <div class="card">
+      ${STANZE.map((s) => {
+        const aperte = dati.attivita.filter((a) => a.stanza === s.id && !a.fatta);
+        const u = aperte.filter((a) => a.urgenza === 3).length;
+        return `<button class="stanza-btn" data-vai="${s.id}">
+          <span>${s.icona} ${esc(s.nome)}</span>
+          <span class="sec">${u} urgent${u === 1 ? 'e' : 'i'} · ${aperte.length} da fare ›</span>
+        </button>`;
+      }).join('')}
+    </div>
+    <h2>Dati</h2>
+    <div class="card" style="padding:14px">
+      <button class="link" data-action="esporta">Esporta JSON</button>
+      &nbsp;·&nbsp;
+      <label class="link">Importa JSON<input type="file" accept="application/json,.json" id="importa"></label>
+    </div>
+    <h2>Google Drive</h2>
+    <div class="card" style="padding:14px">
+      ${driveCollegato()
+        ? `<button class="link" data-action="drive-carica" ${driveOccupato ? 'disabled' : ''}>Carica su Drive</button>
+           &nbsp;·&nbsp;
+           <button class="link" data-action="drive-scarica" ${driveOccupato ? 'disabled' : ''}>Scarica da Drive</button>
+           &nbsp;·&nbsp;
+           <button class="link" data-action="drive-scollega" style="color:var(--red)" ${driveOccupato ? 'disabled' : ''}>Scollega</button>`
+        : `<button class="link" data-action="drive-collega" ${driveOccupato ? 'disabled' : ''}>Collega Google Drive</button>`}
+      ${driveMsg ? `<p class="sec" style="margin:10px 0 0">${esc(driveMsg)}</p>` : ''}
+    </div>
+  `;
+}
+
+function rigaAttivita(a) {
+  return `<div class="riga att ${a.fatta ? 'fatta' : ''}">
+    <button class="check" data-action="toggle" data-id="${a.id}" aria-label="Segna ${esc(a.titolo)}">${a.fatta ? '✓' : ''}</button>
+    <span class="titolo">${esc(a.titolo)}</span>
+    <span class="stelle">${'★'.repeat(a.urgenza)}</span>
+    <button class="del" data-action="elimina" data-id="${a.id}" aria-label="Elimina ${esc(a.titolo)}">×</button>
+  </div>`;
+}
+
+function renderStanze() {
+  const tutte = dati.attivita.filter((a) => a.stanza === stanzaSel);
+  const aperte = tutte.filter((a) => !a.fatta);
+  const fatte = tutte.filter((a) => a.fatta);
+
+  const gruppi = [3, 2, 1]
+    .map((u) => ({ u, voci: aperte.filter((a) => a.urgenza === u) }))
+    .filter((g) => g.voci.length > 0);
+
+  $('#stanze').innerHTML = `
+    <h1>Stanze</h1>
+    <div class="chips">
+      ${STANZE.map((s) => `<button class="chip ${s.id === stanzaSel ? 'on' : ''}" data-stanza="${s.id}">${s.icona} ${esc(s.nome)}</button>`).join('')}
+    </div>
+
+    ${gruppi.length === 0 ? '<div class="card"><p class="vuoto" style="padding:12px 0">Nessuna cosa da fare in questa stanza.</p></div>' : ''}
+    ${gruppi.map((g) => `
+      <h2>${URG[g.u].etichetta}</h2>
+      <p class="sec">${URG[g.u].sugg}</p>
+      <div class="card">${g.voci.map(rigaAttivita).join('')}</div>
+    `).join('')}
+
+    ${fatte.length ? `
+      <h2>Completate</h2>
+      <div class="card">${fatte.map(rigaAttivita).join('')}</div>
+      <button class="link" data-action="pulisci" style="margin:0 4px 12px;color:var(--red)">Rimuovi le completate</button>
+    ` : ''}
+
+    <h2>Nuova attività</h2>
+    <form class="card form" id="formAtt">
+      <input name="titolo" placeholder="Cosa va fatto?" required>
+      <select name="urgenza">
+        <option value="3">Urgente (3 stelle)</option>
+        <option value="2">Meno urgente (2 stelle)</option>
+        <option value="1">Facoltativo (1 stella)</option>
+      </select>
+      <button class="primario" type="submit">Aggiungi a ${esc(STANZE.find((s) => s.id === stanzaSel).nome)}</button>
+    </form>
+  `;
+}
+
+function rigaScorta(s) {
+  const bassa = s.quantita <= s.minimo;
+  return `<div class="riga scorta ${bassa ? 'bassa' : ''}">
+    <div class="info">
+      <span class="titolo">${esc(s.nome)}</span>
+      <span class="sec">${esc(s.categoria || '')}${s.categoria ? ' · ' : ''}minimo ${s.minimo}${s.unita ? ' ' + esc(s.unita) : ''}</span>
+    </div>
+    <button class="tondo" data-action="meno" data-id="${s.id}" aria-label="Diminuisci ${esc(s.nome)}">−</button>
+    <span class="qta">${s.quantita}</span>
+    <button class="tondo primo" data-action="piu" data-id="${s.id}" aria-label="Aumenta ${esc(s.nome)}">+</button>
+    <button class="del" data-action="elimina-scorta" data-id="${s.id}" aria-label="Elimina ${esc(s.nome)}">×</button>
+  </div>`;
+}
+
+function renderScorte() {
+  $('#scorte').innerHTML = `
+    <h1>Scorte</h1>
+    <div class="card">
+      ${dati.scorte.length ? dati.scorte.map(rigaScorta).join('') : '<p class="vuoto" style="padding:12px 0">Nessun articolo.</p>'}
+    </div>
+
+    <h2>Nuovo articolo</h2>
+    <form class="card form" id="formScorta">
+      <input name="nome" placeholder="Nome" required>
+      <input name="categoria" placeholder="Categoria (es. Cucina)">
+      <div class="due">
+        <input name="quantita" type="number" min="0" value="0" inputmode="numeric" aria-label="Quantità">
+        <input name="minimo" type="number" min="0" value="1" inputmode="numeric" aria-label="Minimo">
+      </div>
+      <input name="unita" placeholder="Unità (es. pz, kg, l)">
+      <button class="primario" type="submit">Aggiungi</button>
+    </form>
+  `;
+}
+
+function vaiTab(nome) {
+  document.querySelectorAll('.pagina').forEach((p) => { p.hidden = p.id !== nome; });
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === nome));
+  window.scrollTo(0, 0);
+}
+
+function esporta() {
+  const blob = new Blob([JSON.stringify(dati, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'casa-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-tab],[data-vai],[data-stanza],[data-action]');
+  if (!t) return;
+
+  if (t.dataset.tab) { vaiTab(t.dataset.tab); return; }
+  if (t.dataset.vai) { stanzaSel = t.dataset.vai; render(); vaiTab('stanze'); return; }
+  if (t.dataset.stanza) { stanzaSel = t.dataset.stanza; render(); return; }
+
+  const id = t.dataset.id;
+  switch (t.dataset.action) {
+    case 'toggle': { const a = trova(dati.attivita, id); if (a) a.fatta = !a.fatta; break; }
+    case 'elimina': dati.attivita = dati.attivita.filter((a) => a.id !== id); break;
+    case 'pulisci':
+      if (!confirm('Rimuovere le attività completate di questa stanza?')) return;
+      dati.attivita = dati.attivita.filter((a) => !(a.fatta && a.stanza === stanzaSel));
+      break;
+    case 'meno': { const s = trova(dati.scorte, id); if (s) s.quantita = Math.max(0, s.quantita - 1); break; }
+    case 'piu': { const s = trova(dati.scorte, id); if (s) s.quantita += 1; break; }
+    case 'elimina-scorta': dati.scorte = dati.scorte.filter((s) => s.id !== id); break;
+    case 'esporta': esporta(); return;
+    case 'drive-collega': eseguiDrive(driveAccesso); return;
+    case 'drive-carica': eseguiDrive(driveCarica); return;
+    case 'drive-scarica':
+      if (!confirm('Sostituire i dati di questo dispositivo con quelli salvati su Drive?')) return;
+      eseguiDrive(driveScarica);
+      return;
+    case 'drive-scollega': driveScollega(); return;
+    default: return;
+  }
+  salva();
+  render();
+});
+
+document.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const d = Object.fromEntries(new FormData(f));
+
+  if (f.id === 'formAtt') {
+    const titolo = String(d.titolo || '').trim();
+    if (!titolo) return;
+    dati.attivita.push({
+      id: uid(), titolo, stanza: stanzaSel,
+      urgenza: Number(d.urgenza), fatta: false, creataIl: adesso(),
+    });
+  } else if (f.id === 'formScorta') {
+    const nome = String(d.nome || '').trim();
+    if (!nome) return;
+    dati.scorte.push({
+      id: uid(), nome,
+      categoria: String(d.categoria || '').trim(),
+      quantita: Math.max(0, parseInt(d.quantita, 10) || 0),
+      minimo: Math.max(0, parseInt(d.minimo, 10) || 0),
+      unita: String(d.unita || '').trim(),
+    });
+  } else {
+    return;
+  }
+  salva();
+  render();
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'importa') return;
+  const file = e.target.files[0];
+  if (!file) return;
+  file.text()
+    .then((t) => {
+      const j = JSON.parse(t);
+      if (!Array.isArray(j.attivita) || !Array.isArray(j.scorte)) throw new Error('formato non valido');
+      dati = normalizza(j);
+      salva();
+      render();
+      alert('Dati importati.');
+    })
+    .catch(() => alert('File non valido: serve un export JSON di Casa.'));
+});
+
+/* ---------- Google Drive ----------
+   Il file casa.json sta in appDataFolder: una cartella nascosta, visibile solo a questa app.
+   Formato compatibile con l'app Swift (stesso file, stessi nomi dei campi). */
+
+// ID client OAuth di tipo "Applicazione web" (progetto Google Cloud casa-511922). Vedi README.
+const GOOGLE_CLIENT_ID = '144660060564-a08p9onsupgugqf0v9ogddbu9bhb10r9.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const DRIVE_FILE = 'casa.json';
+const FLAG_DRIVE = 'casa.drive';
+
+let driveToken = null;
+let driveScade = 0;
+let driveMsg = '';
+let driveOccupato = false;
+let tokenClient = null;
+let accessoOk = null;
+let accessoKo = null;
+
+const adesso = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+function driveCollegato() {
+  try { return localStorage.getItem(FLAG_DRIVE) === '1'; } catch (e) { return false; }
+}
+
+function impostaFlagDrive(v) {
+  try { v ? localStorage.setItem(FLAG_DRIVE, '1') : localStorage.removeItem(FLAG_DRIVE); } catch (e) { /* ignora */ }
+}
+
+function normalizza(j) {
+  if (!j || !Array.isArray(j.attivita) || !Array.isArray(j.scorte)) throw new Error('formato non valido');
+  return {
+    attivita: j.attivita.map((a) => ({
+      id: a.id || uid(),
+      titolo: String(a.titolo || ''),
+      stanza: String(a.stanza || 'sala'),
+      urgenza: Number(a.urgenza) || 1,
+      fatta: Boolean(a.fatta),
+      creataIl: a.creataIl || adesso(),
+    })),
+    scorte: j.scorte.map((s) => ({
+      id: s.id || uid(),
+      nome: String(s.nome || ''),
+      categoria: String(s.categoria || ''),
+      quantita: Math.max(0, parseInt(s.quantita, 10) || 0),
+      minimo: Math.max(0, parseInt(s.minimo, 10) || 0),
+      unita: String(s.unita || ''),
+    })),
+  };
+}
+
+function driveAccesso() {
+  return new Promise((ok, ko) => {
+    if (driveToken && Date.now() < driveScade - 60000) { ok(driveToken); return; }
+    if (!GOOGLE_CLIENT_ID) { ko(new Error("Manca l'ID client Google nel codice (vedi README).")); return; }
+    if (!window.google || !google.accounts) { ko(new Error('Libreria Google non caricata: sei online?')); return; }
+
+    accessoOk = ok;
+    accessoKo = ko;
+    if (!tokenClient) {
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: DRIVE_SCOPE,
+        callback: (r) => {
+          if (r.error) { accessoKo(new Error(r.error_description || r.error)); return; }
+          driveToken = r.access_token;
+          driveScade = Date.now() + (Number(r.expires_in) || 3600) * 1000;
+          impostaFlagDrive(true);
+          accessoOk(driveToken);
+        },
+        error_callback: (e) => accessoKo(new Error('Accesso annullato o bloccato (' + (e.type || 'errore') + ').')),
+      });
+    }
+    tokenClient.requestAccessToken({ prompt: driveCollegato() ? '' : 'consent' });
+  });
+}
+
+async function driveFetch(url, opzioni = {}) {
+  const token = await driveAccesso();
+  const r = await fetch(url, { ...opzioni, headers: { ...(opzioni.headers || {}), Authorization: 'Bearer ' + token } });
+  if (!r.ok) throw new Error('Errore di Google Drive (' + r.status + ').');
+  return r;
+}
+
+async function driveIdFile() {
+  const q = encodeURIComponent(`name='${DRIVE_FILE}' and trashed=false`);
+  const r = await driveFetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id)`);
+  const j = await r.json();
+  return j.files && j.files[0] ? j.files[0].id : null;
+}
+
+async function driveCarica() {
+  const id = await driveIdFile();
+  const meta = id ? { name: DRIVE_FILE } : { name: DRIVE_FILE, parents: ['appDataFolder'] };
+  const json = JSON.stringify({ versione: 1, attivita: dati.attivita, scorte: dati.scorte });
+  const b = 'casa' + uid();
+  const corpo = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n`
+    + `--${b}\r\nContent-Type: application/json\r\n\r\n${json}\r\n--${b}--`;
+  await driveFetch(`https://www.googleapis.com/upload/drive/v3/files${id ? '/' + id : ''}?uploadType=multipart`, {
+    method: id ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': 'multipart/related; boundary=' + b },
+    body: corpo,
+  });
+}
+
+async function driveScarica() {
+  const id = await driveIdFile();
+  if (!id) throw new Error('Nessun file su Drive: prima carica i dati.');
+  const r = await driveFetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
+  dati = normalizza(await r.json());
+  salva();
+}
+
+function driveScollega() {
+  if (driveToken && window.google && google.accounts) {
+    try { google.accounts.oauth2.revoke(driveToken, () => {}); } catch (e) { /* ignora */ }
+  }
+  driveToken = null;
+  driveScade = 0;
+  impostaFlagDrive(false);
+  driveMsg = 'Drive scollegato.';
+  render();
+}
+
+// Va chiamata direttamente dal gesto dell'utente (clic): il popup di Google lo richiede.
+function eseguiDrive(azione) {
+  driveOccupato = true;
+  driveMsg = '';
+  render();
+  azione()
+    .then(() => { driveMsg = 'Operazione completata.'; })
+    .catch((e) => { driveMsg = e.message || 'Operazione non riuscita.'; })
+    .finally(() => { driveOccupato = false; render(); });
+}
+
+render();
+vaiTab('generale');
+</script>
+</body>
+</html>
