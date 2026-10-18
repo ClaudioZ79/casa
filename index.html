@@ -21,6 +21,7 @@
     --accent: #007aff;
     --red: #ff3b30;
     --orange: #ff9500;
+    --rosa: #ff2d92;
     --sep: rgba(60, 60, 67, .18);
     --r: 18px;
   }
@@ -31,6 +32,7 @@
       --text: #fff;
       --sec: #8e8e93;
       --sep: rgba(84, 84, 88, .6);
+      --rosa: #ff69b4;
     }
   }
   :root[data-theme="dark"] {
@@ -39,6 +41,7 @@
     --text: #fff;
     --sec: #8e8e93;
     --sep: rgba(84, 84, 88, .6);
+    --rosa: #ff69b4;
   }
 
   * { box-sizing: border-box; }
@@ -138,6 +141,22 @@
     background: rgba(0, 122, 255, .14); color: var(--accent);
   }
   .persona.nessuno { background: rgba(120, 120, 128, .14); color: var(--sec); }
+  .persona.monica { background: color-mix(in srgb, var(--rosa) 18%, transparent); color: var(--rosa); }
+
+  /* Scelta di chi fa l'attività: tre pulsanti al posto del menu a tendina */
+  .scelta { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pillola { position: relative; }
+  .pillola input { position: absolute; opacity: 0; pointer-events: none; }
+  .pillola span {
+    display: inline-block; min-height: 40px; padding: 9px 16px; border-radius: 999px;
+    background: rgba(120, 120, 128, .12); color: var(--sec); font-weight: 500;
+  }
+  .pillola.claudio span { color: var(--accent); }
+  .pillola.monica span { color: var(--rosa); }
+  .pillola input:checked + span { background: var(--sec); color: #fff; }
+  .pillola.claudio input:checked + span { background: var(--accent); color: #fff; }
+  .pillola.monica input:checked + span { background: var(--rosa); color: #fff; }
+  .pillola input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
   .titolo small { display: block; color: var(--sec); font-size: 13px; }
 
   .tabbar {
@@ -290,7 +309,7 @@ function rigaAttivita(a, compatta = false) {
   return `<div class="riga att ${a.fatta ? 'fatta' : ''}">
     <button class="check" data-action="toggle" data-id="${a.id}" aria-label="Segna ${esc(a.titolo)}">${a.fatta ? '✓' : ''}</button>
     <span class="titolo">${esc(a.titolo)}</span>
-    <button class="persona ${chi ? '' : 'nessuno'}" data-action="assegna" data-id="${a.id}" aria-label="Chi deve farlo: ${chi || 'nessuno'}. Tocca per cambiare">${chi ? esc(chi) : 'Assegna'}</button>
+    <button class="persona ${chi ? a.assegnata : 'nessuno'}" data-action="assegna" data-id="${a.id}" aria-label="Chi deve farlo: ${chi || 'nessuno'}. Tocca per cambiare">${chi ? esc(chi) : 'Assegna'}</button>
     ${compatta ? '' : `<span class="stelle">${'★'.repeat(a.urgenza)}</span>
     <button class="del" data-action="elimina" data-id="${a.id}" aria-label="Elimina ${esc(a.titolo)}">×</button>`}
   </div>`;
@@ -334,11 +353,11 @@ function renderStanze() {
           <option value="2">Meno urgente (2 stelle)</option>
           <option value="1">Facoltativo (1 stella)</option>
         </select></label>
-      <label class="campo"><span>Chi lo fa</span>
-        <select name="assegnata">
-          <option value="">Nessuno in particolare</option>
-          ${PERSONE.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}
-        </select></label>
+      <div class="campo"><span>Chi lo fa</span>
+        <div class="scelta" role="radiogroup" aria-label="Chi lo fa">
+          <label class="pillola"><input type="radio" name="assegnata" value="" checked><span>Nessuno</span></label>
+          ${PERSONE.map((p) => `<label class="pillola ${p.id}"><input type="radio" name="assegnata" value="${p.id}"><span>${esc(p.nome)}</span></label>`).join('')}
+        </div></div>
       <button class="primario" type="submit">Aggiungi a ${esc(STANZE.find((s) => s.id === stanzaSel).nome)}</button>
     </form>
   `;
