@@ -45,7 +45,8 @@ GitHub Pages pubblica la cartella radice del ramo oppure la cartella `docs/`. Pe
 
 ## Da fare
 
-- Icona dell'app: serve un PNG 180×180 (`apple-touch-icon`) e un'icona 512×512 nel manifest.
-  Ora l'app usa un'istantanea della pagina.
+- Icona dell'app: `icon-180.png` (apple-touch-icon), `icon-192.png` e `icon-512.png` (manifest) sono
+  ricavate dall'icona dell'app Swift. Se cambi l'icona, rigenerale con `sips -z <px> <px>`.
+  Dopo averla cambiata, su iPhone rimuovi la vecchia icona dalla Home e aggiungila di nuovo.
 - Icone in stile iOS: al momento le stanze usano emoji. Si possono sostituire con SVG.
 - Sincronizzazione con Google Drive (OAuth, ID client da creare su Google Cloud).
