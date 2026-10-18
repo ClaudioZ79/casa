@@ -306,7 +306,11 @@ function renderStanze() {
   `;
 }
 
-function rigaScorta(s) {
+// Gli articoli con questa quantità o meno finiscono nella lista della spesa.
+const SOGLIA_SPESA = 2;
+const daComprare = () => dati.scorte.filter((s) => s.quantita <= SOGLIA_SPESA);
+
+function rigaScorta(s, conElimina = true) {
   const bassa = s.quantita <= s.minimo;
   return `<div class="riga scorta ${bassa ? 'bassa' : ''}">
     <div class="info">
@@ -316,15 +320,34 @@ function rigaScorta(s) {
     <button class="tondo" data-action="meno" data-id="${s.id}" aria-label="Diminuisci ${esc(s.nome)}">−</button>
     <span class="qta">${s.quantita}</span>
     <button class="tondo primo" data-action="piu" data-id="${s.id}" aria-label="Aumenta ${esc(s.nome)}">+</button>
-    <button class="del" data-action="elimina-scorta" data-id="${s.id}" aria-label="Elimina ${esc(s.nome)}">×</button>
+    ${conElimina ? `<button class="del" data-action="elimina-scorta" data-id="${s.id}" aria-label="Elimina ${esc(s.nome)}">×</button>` : ''}
   </div>`;
 }
 
+function copiaSpesa() {
+  const titolo = 'Lista della spesa';
+  const testo = titolo + '\n' + daComprare().map((s) => `- ${s.nome}${s.unita ? ' (' + s.unita + ')' : ''}`).join('\n');
+  if (navigator.share) {
+    navigator.share({ title: titolo, text: testo }).catch(() => { /* annullato */ });
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(testo).then(() => alert('Lista copiata.')).catch(() => alert('Copia non riuscita.'));
+  }
+}
+
 function renderScorte() {
+  const spesa = daComprare();
   $('#scorte').innerHTML = `
     <h1>Scorte</h1>
+    <h2>Lista della spesa</h2>
+    <p class="sec">Qui compaiono gli articoli con ${SOGLIA_SPESA} unità o meno. Escono da soli quando li riporti sopra ${SOGLIA_SPESA}.</p>
     <div class="card">
-      ${dati.scorte.length ? dati.scorte.map(rigaScorta).join('') : '<p class="vuoto" style="padding:12px 0">Nessun articolo.</p>'}
+      ${spesa.length ? spesa.map((s) => rigaScorta(s, false)).join('') : '<p class="vuoto" style="padding:12px 0">Niente da comprare.</p>'}
+    </div>
+    ${spesa.length ? '<button class="link" data-action="copia-spesa" style="margin:0 4px 12px">Condividi o copia la lista</button>' : ''}
+
+    <h2>Tutte le scorte</h2>
+    <div class="card">
+      ${dati.scorte.length ? dati.scorte.map((s) => rigaScorta(s)).join('') : '<p class="vuoto" style="padding:12px 0">Nessun articolo.</p>'}
     </div>
 
     <h2>Nuovo articolo</h2>
@@ -379,6 +402,7 @@ document.addEventListener('click', (e) => {
     case 'piu': { const s = trova(dati.scorte, id); if (s) s.quantita += 1; break; }
     case 'elimina-scorta': dati.scorte = dati.scorte.filter((s) => s.id !== id); break;
     case 'esporta': esporta(); return;
+    case 'copia-spesa': copiaSpesa(); return;
     case 'drive-collega': eseguiDrive(driveAccesso); return;
     case 'drive-carica': eseguiDrive(driveCarica); return;
     case 'drive-scarica':
