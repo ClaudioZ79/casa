@@ -83,7 +83,7 @@
     display: flex; justify-content: space-between; align-items: center; gap: 8px;
     width: 100%; background: none; border: 0; text-align: left; padding: 12px 0; min-height: 44px;
   }
-  .stanza-btn + .stanza-btn { border-top: .5px solid var(--sep); }
+  .stanza-btn + .riga { border-top: .5px solid var(--sep); }
   .titolo { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .link { color: var(--accent); background: none; border: 0; padding: 0; }
   .link input { display: none; }
@@ -130,6 +130,15 @@
     background: var(--accent); color: #fff; border: 0; border-radius: 12px;
     padding: 12px; font-weight: 600;
   }
+
+  .campo { display: flex; flex-direction: column; gap: 4px; }
+  .campo > span { font-size: 13px; color: var(--sec); padding-left: 4px; }
+  .persona {
+    flex: none; border: 0; border-radius: 999px; padding: 3px 10px; font-size: 13px;
+    background: rgba(0, 122, 255, .14); color: var(--accent);
+  }
+  .persona.nessuno { background: rgba(120, 120, 128, .14); color: var(--sec); }
+  .titolo small { display: block; color: var(--sec); font-size: 13px; }
 
   .tabbar {
     position: fixed; left: 12px; right: 12px;
@@ -181,6 +190,12 @@ const URG = {
   1: { etichetta: 'Facoltativi', singolare: 'Facoltativo', sugg: 'Se hai tempo' },
 };
 
+const PERSONE = [
+  { id: 'claudio', nome: 'Claudio' },
+  { id: 'monica', nome: 'Monica' },
+];
+const nomePersona = (id) => (PERSONE.find((p) => p.id === id) || {}).nome || '';
+
 const KEY = 'casa.v1';
 let dati = carica();
 let stanzaSel = 'cucina';
@@ -227,17 +242,19 @@ function renderGenerale() {
       <div class="card stat largo"><b>${esaurimento}</b><span>Scorte in esaurimento</span></div>
     </div>
     <h2>Stanza per stanza</h2>
-    <p class="sec">Per ogni stanza vedi le cose urgenti ancora da fare.</p>
-    <div class="card">
-      ${STANZE.map((s) => {
-        const aperte = dati.attivita.filter((a) => a.stanza === s.id && !a.fatta);
-        const u = aperte.filter((a) => a.urgenza === 3).length;
-        return `<button class="stanza-btn" data-vai="${s.id}">
+    <p class="sec">Sotto ogni stanza vedi gli impegni urgenti ancora da fare. Tocca il cerchio quando è fatto, il nome per cambiare chi lo fa, o la stanza per aprirla.</p>
+    ${STANZE.map((s) => {
+      const aperte = dati.attivita.filter((a) => a.stanza === s.id && !a.fatta);
+      const urgentiStanza = aperte.filter((a) => a.urgenza === 3);
+      const u = urgentiStanza.length;
+      return `<div class="card">
+        <button class="stanza-btn" data-vai="${s.id}">
           <span>${s.icona} ${esc(s.nome)}</span>
           <span class="sec">${u} urgent${u === 1 ? 'e' : 'i'} · ${aperte.length} da fare ›</span>
-        </button>`;
-      }).join('')}
-    </div>
+        </button>
+        ${u ? urgentiStanza.map((a) => rigaAttivita(a, true)).join('') : '<p class="vuoto" style="padding:0 0 10px">Nessuna cosa urgente.</p>'}
+      </div>`;
+    }).join('')}
     <h2>Dati</h2>
     <div class="card" style="padding:14px">
       <button class="link" data-action="esporta">Esporta JSON</button>
@@ -258,12 +275,15 @@ function renderGenerale() {
   `;
 }
 
-function rigaAttivita(a) {
+// compatta: usata nella Generale, nasconde stelle ed Elimina (tutte le righe sono già urgenti).
+function rigaAttivita(a, compatta = false) {
+  const chi = nomePersona(a.assegnata);
   return `<div class="riga att ${a.fatta ? 'fatta' : ''}">
     <button class="check" data-action="toggle" data-id="${a.id}" aria-label="Segna ${esc(a.titolo)}">${a.fatta ? '✓' : ''}</button>
     <span class="titolo">${esc(a.titolo)}</span>
-    <span class="stelle">${'★'.repeat(a.urgenza)}</span>
-    <button class="del" data-action="elimina" data-id="${a.id}" aria-label="Elimina ${esc(a.titolo)}">×</button>
+    <button class="persona ${chi ? '' : 'nessuno'}" data-action="assegna" data-id="${a.id}" aria-label="Chi deve farlo: ${chi || 'nessuno'}. Tocca per cambiare">${chi ? esc(chi) : 'Assegna'}</button>
+    ${compatta ? '' : `<span class="stelle">${'★'.repeat(a.urgenza)}</span>
+    <button class="del" data-action="elimina" data-id="${a.id}" aria-label="Elimina ${esc(a.titolo)}">×</button>`}
   </div>`;
 }
 
@@ -286,23 +306,30 @@ function renderStanze() {
     ${gruppi.map((g) => `
       <h2>${URG[g.u].etichetta}</h2>
       <p class="sec">${URG[g.u].sugg}</p>
-      <div class="card">${g.voci.map(rigaAttivita).join('')}</div>
+      <div class="card">${g.voci.map((a) => rigaAttivita(a)).join('')}</div>
     `).join('')}
 
     ${fatte.length ? `
       <h2>Completate</h2>
-      <div class="card">${fatte.map(rigaAttivita).join('')}</div>
+      <div class="card">${fatte.map((a) => rigaAttivita(a)).join('')}</div>
       <button class="link" data-action="pulisci" style="margin:0 4px 12px;color:var(--red)">Rimuovi le completate</button>
     ` : ''}
 
     <h2>Nuova attività</h2>
     <form class="card form" id="formAtt">
-      <input name="titolo" placeholder="Cosa va fatto?" required>
-      <select name="urgenza">
-        <option value="3">Urgente (3 stelle)</option>
-        <option value="2">Meno urgente (2 stelle)</option>
-        <option value="1">Facoltativo (1 stella)</option>
-      </select>
+      <label class="campo"><span>Cosa va fatto</span>
+        <input name="titolo" placeholder="Es. Pulire il forno" required></label>
+      <label class="campo"><span>Quanto è urgente</span>
+        <select name="urgenza">
+          <option value="3">Urgente (3 stelle)</option>
+          <option value="2">Meno urgente (2 stelle)</option>
+          <option value="1">Facoltativo (1 stella)</option>
+        </select></label>
+      <label class="campo"><span>Chi lo fa</span>
+        <select name="assegnata">
+          <option value="">Nessuno in particolare</option>
+          ${PERSONE.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}
+        </select></label>
       <button class="primario" type="submit">Aggiungi a ${esc(STANZE.find((s) => s.id === stanzaSel).nome)}</button>
     </form>
   `;
@@ -354,13 +381,19 @@ function renderScorte() {
 
     <h2>Nuovo articolo</h2>
     <form class="card form" id="formScorta">
-      <input name="nome" placeholder="Nome" required>
-      <input name="categoria" placeholder="Categoria (es. Cucina)">
+      <label class="campo"><span>Nome dell'articolo</span>
+        <input name="nome" placeholder="Es. Detersivo piatti" required></label>
+      <label class="campo"><span>Categoria (facoltativa)</span>
+        <input name="categoria" placeholder="Es. Cucina, Bagno, Pulizia"></label>
       <div class="due">
-        <input name="quantita" type="number" min="0" value="0" inputmode="numeric" aria-label="Quantità">
-        <input name="minimo" type="number" min="0" value="1" inputmode="numeric" aria-label="Minimo">
+        <label class="campo"><span>Quanti ne hai adesso</span>
+          <input name="quantita" type="number" min="0" value="0" inputmode="numeric"></label>
+        <label class="campo"><span>Scorta minima</span>
+          <input name="minimo" type="number" min="0" value="1" inputmode="numeric"></label>
       </div>
-      <input name="unita" placeholder="Unità (es. pz, kg, l)">
+      <p class="sec" style="margin:-4px 4px 0">La scorta minima serve a evidenziare in rosso l'articolo. In lista della spesa finisce con ${SOGLIA_SPESA} unità o meno.</p>
+      <label class="campo"><span>Unità di misura (facoltativa)</span>
+        <input name="unita" placeholder="Es. pz, kg, l, rotoli"></label>
       <button class="primario" type="submit">Aggiungi</button>
     </form>
   `;
@@ -396,6 +429,15 @@ document.addEventListener('click', (e) => {
   switch (t.dataset.action) {
     case 'toggle': { const a = trova(dati.attivita, id); if (a) a.fatta = !a.fatta; break; }
     case 'elimina': dati.attivita = dati.attivita.filter((a) => a.id !== id); break;
+    case 'assegna': {
+      // Nessuno -> Claudio -> Monica -> Nessuno
+      const a = trova(dati.attivita, id);
+      if (a) {
+        const i = PERSONE.findIndex((p) => p.id === a.assegnata);
+        a.assegnata = i + 1 < PERSONE.length ? PERSONE[i + 1].id : '';
+      }
+      break;
+    }
     case 'pulisci':
       if (!confirm('Rimuovere le attività completate di questa stanza?')) return;
       dati.attivita = dati.attivita.filter((a) => !(a.fatta && a.stanza === stanzaSel));
@@ -429,6 +471,7 @@ document.addEventListener('submit', (e) => {
     dati.attivita.push({
       id: uid(), titolo, stanza: stanzaSel,
       urgenza: Number(d.urgenza), fatta: false, creataIl: adesso(),
+      assegnata: PERSONE.some((p) => p.id === d.assegnata) ? d.assegnata : '',
     });
   } else if (f.id === 'formScorta') {
     const nome = String(d.nome || '').trim();
@@ -501,6 +544,7 @@ function normalizza(j) {
       urgenza: Number(a.urgenza) || 1,
       fatta: Boolean(a.fatta),
       creataIl: a.creataIl || adesso(),
+      assegnata: PERSONE.some((p) => p.id === a.assegnata) ? a.assegnata : '',
     })),
     scorte: j.scorte.map((s) => ({
       id: s.id || uid(),
