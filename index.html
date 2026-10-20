@@ -122,6 +122,9 @@
   }
   .tondo.primo { background: var(--accent); color: #fff; }
   .qta { min-width: 28px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .spesa.comprata .check { background: var(--accent); }
+  .spesa.comprata .titolo { text-decoration: line-through; color: var(--sec); }
+  .togli { border: 0; background: none; color: var(--sec); font-size: 14px; padding: 8px 4px; min-height: 44px; }
 
   .form { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
   .form input, .form select {
@@ -365,7 +368,26 @@ function renderStanze() {
 
 // Gli articoli con questa quantità o meno finiscono nella lista della spesa.
 const SOGLIA_SPESA = 2;
-const daComprare = () => dati.scorte.filter((s) => s.quantita <= SOGLIA_SPESA);
+const daComprare = () => dati.scorte.filter((s) => s.quantita <= SOGLIA_SPESA && !s.tolto);
+// Pezzi da comprare: quelli scelti a mano, altrimenti quanti ne servono per tornare sopra la soglia.
+const pezziSpesa = (s) => (s.pezzi > 0 ? s.pezzi : Math.max(1, SOGLIA_SPESA + 1 - s.quantita));
+
+// Riga della lista della spesa: casella "comprato", nome, numero di pezzi con − e +, Togli.
+function rigaSpesa(s) {
+  return `<div class="riga spesa ${s.comprato ? 'comprata' : ''}">
+    <button class="check" data-action="spesa-check" data-id="${s.id}" aria-pressed="${s.comprato ? 'true' : 'false'}" aria-label="Comprato: ${esc(s.nome)}">${s.comprato ? '✓' : ''}</button>
+    <span class="titolo">${esc(s.nome)}</span>
+    <button class="tondo" data-action="spesa-meno" data-id="${s.id}" aria-label="Diminuisci i pezzi di ${esc(s.nome)}">−</button>
+    <span class="qta">${pezziSpesa(s)}</span>
+    <button class="tondo primo" data-action="spesa-piu" data-id="${s.id}" aria-label="Aumenta i pezzi di ${esc(s.nome)}">+</button>
+    <button class="togli" data-action="spesa-togli" data-id="${s.id}" aria-label="Togli ${esc(s.nome)} dalla lista">Togli</button>
+  </div>`;
+}
+
+// Tolta dalla lista o comprata: tutto torna normale quando la scorta risale sopra la soglia.
+function azzeraSpesa(s) {
+  delete s.pezzi; delete s.comprato; delete s.tolto;
+}
 
 function rigaScorta(s, conElimina = true) {
   const bassa = s.quantita <= s.minimo;
@@ -383,7 +405,7 @@ function rigaScorta(s, conElimina = true) {
 
 function copiaSpesa() {
   const titolo = 'Lista della spesa';
-  const testo = titolo + '\n' + daComprare().map((s) => `- ${s.nome}${s.unita ? ' (' + s.unita + ')' : ''}`).join('\n');
+  const testo = titolo + '\n' + daComprare().filter((s) => !s.comprato).map((s) => `- ${s.nome} × ${pezziSpesa(s)}`).join('\n');
   if (navigator.share) {
     navigator.share({ title: titolo, text: testo }).catch(() => { /* annullato */ });
   } else if (navigator.clipboard) {
@@ -396,11 +418,13 @@ function renderScorte() {
   $('#scorte').innerHTML = `
     <h1>Scorte</h1>
     <h2>Lista della spesa</h2>
-    <p class="sec">Qui compaiono gli articoli con ${SOGLIA_SPESA} unità o meno. Escono da soli quando li riporti sopra ${SOGLIA_SPESA}.</p>
+    <p class="sec">Qui compaiono gli articoli con ${SOGLIA_SPESA} unità o meno. Spunta quelli comprati, regola i pezzi con − e +, o usa Togli per toglierli dalla lista. Escono da soli quando li riporti sopra ${SOGLIA_SPESA}.</p>
     <div class="card">
-      ${spesa.length ? spesa.map((s) => rigaScorta(s, false)).join('') : '<p class="vuoto" style="padding:12px 0">Niente da comprare.</p>'}
+      ${spesa.length ? spesa.map(rigaSpesa).join('') : '<p class="vuoto" style="padding:12px 0">Niente da comprare.</p>'}
     </div>
-    ${spesa.length ? '<button class="link" data-action="copia-spesa" style="margin:0 4px 12px">Condividi o copia la lista</button>' : ''}
+    ${spesa.some((s) => s.comprato) ? '<button class="link" data-action="spesa-carica" style="margin:0 4px 12px;display:block">Metti in scorta le voci comprate</button>' : ''}
+    ${spesa.some((s) => !s.comprato) ? '<button class="link" data-action="copia-spesa" style="margin:0 4px 12px;display:block">Condividi o copia la lista</button>' : ''}
+    ${dati.scorte.some((s) => s.tolto && s.quantita <= SOGLIA_SPESA) ? '<button class="link" data-action="spesa-rimetti" style="margin:0 4px 12px;display:block">Rimetti le voci tolte</button>' : ''}
 
     <h2>Tutte le scorte</h2>
     <div class="card">
@@ -471,7 +495,19 @@ document.addEventListener('click', (e) => {
       dati.attivita = dati.attivita.filter((a) => !(a.fatta && a.stanza === stanzaSel));
       break;
     case 'meno': { const s = trova(dati.scorte, id); if (s) s.quantita = Math.max(0, s.quantita - 1); break; }
-    case 'piu': { const s = trova(dati.scorte, id); if (s) s.quantita += 1; break; }
+    case 'piu': {
+      const s = trova(dati.scorte, id);
+      if (s) { s.quantita += 1; if (s.quantita > SOGLIA_SPESA) azzeraSpesa(s); }
+      break;
+    }
+    case 'spesa-check': { const s = trova(dati.scorte, id); if (s) { if (s.comprato) delete s.comprato; else s.comprato = true; } break; }
+    case 'spesa-meno': { const s = trova(dati.scorte, id); if (s) s.pezzi = Math.max(1, pezziSpesa(s) - 1); break; }
+    case 'spesa-piu': { const s = trova(dati.scorte, id); if (s) s.pezzi = pezziSpesa(s) + 1; break; }
+    case 'spesa-togli': { const s = trova(dati.scorte, id); if (s) { s.tolto = true; delete s.comprato; } break; }
+    case 'spesa-rimetti': dati.scorte.forEach((s) => { delete s.tolto; }); break;
+    case 'spesa-carica':
+      dati.scorte.filter((s) => s.comprato).forEach((s) => { s.quantita += pezziSpesa(s); azzeraSpesa(s); });
+      break;
     case 'elimina-scorta': dati.scorte = dati.scorte.filter((s) => s.id !== id); break;
     case 'esporta': esporta(); return;
     case 'copia-spesa': copiaSpesa(); return;
@@ -584,6 +620,10 @@ function normalizza(j) {
       quantita: Math.max(0, parseInt(s.quantita, 10) || 0),
       minimo: Math.max(0, parseInt(s.minimo, 10) || 0),
       unita: String(s.unita || ''),
+      // Campi della lista della spesa: presenti solo quando servono, così le scorte normali restano uguali.
+      ...(parseInt(s.pezzi, 10) > 0 ? { pezzi: parseInt(s.pezzi, 10) } : {}),
+      ...(s.comprato ? { comprato: true } : {}),
+      ...(s.tolto ? { tolto: true } : {}),
     })),
   };
 }
