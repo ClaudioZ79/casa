@@ -122,9 +122,6 @@
   }
   .tondo.primo { background: var(--accent); color: #fff; }
   .qta { min-width: 28px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .spesa.comprata .check { background: var(--accent); }
-  .spesa.comprata .titolo { text-decoration: line-through; color: var(--sec); }
-  .togli { border: 0; background: none; color: var(--sec); font-size: 14px; padding: 8px 4px; min-height: 44px; }
 
   .form { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
   .form input, .form select {
@@ -188,12 +185,14 @@
   <section id="generale" class="pagina" hidden></section>
   <section id="stanze" class="pagina" hidden></section>
   <section id="scorte" class="pagina" hidden></section>
+  <section id="spesa" class="pagina" hidden></section>
 </main>
 
 <nav class="tabbar">
   <button class="tab" data-tab="generale"><span class="ico">🏠</span><span>Generale</span></button>
   <button class="tab" data-tab="stanze"><span class="ico">🧹</span><span>Stanze</span></button>
   <button class="tab" data-tab="scorte"><span class="ico">📦</span><span>Scorte</span></button>
+  <button class="tab" data-tab="spesa"><span class="ico">🛒</span><span>Spesa</span></button>
 </nav>
 
 <script>
@@ -227,10 +226,13 @@ function carica() {
     const r = localStorage.getItem(KEY);
     if (r) {
       const j = JSON.parse(r);
-      if (Array.isArray(j.attivita) && Array.isArray(j.scorte)) return j;
+      if (Array.isArray(j.attivita) && Array.isArray(j.scorte)) {
+        if (!Array.isArray(j.spesa)) j.spesa = [];
+        return j;
+      }
     }
   } catch (e) { /* storage non disponibile: si parte vuoti */ }
-  return { attivita: [], scorte: [] };
+  return { attivita: [], scorte: [], spesa: [] };
 }
 
 // Salva solo su questo dispositivo.
@@ -255,6 +257,7 @@ function render() {
   renderGenerale();
   renderStanze();
   renderScorte();
+  renderSpesa();
 }
 
 function renderGenerale() {
@@ -366,27 +369,26 @@ function renderStanze() {
   `;
 }
 
-// Gli articoli con questa quantità o meno finiscono nella lista della spesa.
+// Quando una scorta scende a questa quantità (o meno) entra da sola nella lista della spesa.
 const SOGLIA_SPESA = 2;
-const daComprare = () => dati.scorte.filter((s) => s.quantita <= SOGLIA_SPESA && !s.tolto);
-// Pezzi da comprare: quelli scelti a mano, altrimenti quanti ne servono per tornare sopra la soglia.
-const pezziSpesa = (s) => (s.pezzi > 0 ? s.pezzi : Math.max(1, SOGLIA_SPESA + 1 - s.quantita));
 
-// Riga della lista della spesa: casella "comprato", nome, numero di pezzi con − e +, Togli.
-function rigaSpesa(s) {
-  return `<div class="riga spesa ${s.comprato ? 'comprata' : ''}">
-    <button class="check" data-action="spesa-check" data-id="${s.id}" aria-pressed="${s.comprato ? 'true' : 'false'}" aria-label="Comprato: ${esc(s.nome)}">${s.comprato ? '✓' : ''}</button>
-    <span class="titolo">${esc(s.nome)}</span>
-    <button class="tondo" data-action="spesa-meno" data-id="${s.id}" aria-label="Diminuisci i pezzi di ${esc(s.nome)}">−</button>
-    <span class="qta">${pezziSpesa(s)}</span>
-    <button class="tondo primo" data-action="spesa-piu" data-id="${s.id}" aria-label="Aumenta i pezzi di ${esc(s.nome)}">+</button>
-    <button class="togli" data-action="spesa-togli" data-id="${s.id}" aria-label="Togli ${esc(s.nome)} dalla lista">Togli</button>
-  </div>`;
+const aperteSpesa = () => dati.spesa.filter((x) => !x.comprato);
+
+// Aggiunge la scorta alla lista della spesa, senza doppioni tra gli articoli ancora da comprare.
+function aggiungiASpesa(s) {
+  if (dati.spesa.some((x) => !x.comprato && x.scortaId === s.id)) return;
+  dati.spesa.push({
+    id: uid(), nome: s.nome, quantita: 1, unita: s.unita || '',
+    comprato: false, scortaId: s.id, creataIl: adesso(),
+  });
 }
 
-// Tolta dalla lista o comprata: tutto torna normale quando la scorta risale sopra la soglia.
-function azzeraSpesa(s) {
-  delete s.pezzi; delete s.comprato; delete s.tolto;
+// Scatta solo quando la scorta SCENDE sotto la soglia: se hai tolto l'articolo dalla lista
+// e la scorta resta bassa, non lo rimette. quantitaPrima manca per gli articoli appena creati.
+function controllaSpesaAutomatica(s, quantitaPrima) {
+  if (s.quantita > SOGLIA_SPESA) return;
+  if (quantitaPrima !== undefined && quantitaPrima <= SOGLIA_SPESA) return;
+  aggiungiASpesa(s);
 }
 
 function rigaScorta(s, conElimina = true) {
@@ -405,7 +407,7 @@ function rigaScorta(s, conElimina = true) {
 
 function copiaSpesa() {
   const titolo = 'Lista della spesa';
-  const testo = titolo + '\n' + daComprare().filter((s) => !s.comprato).map((s) => `- ${s.nome} × ${pezziSpesa(s)}`).join('\n');
+  const testo = titolo + '\n' + aperteSpesa().map((x) => `- ${x.nome} × ${x.quantita}${x.unita ? ' ' + x.unita : ''}`).join('\n');
   if (navigator.share) {
     navigator.share({ title: titolo, text: testo }).catch(() => { /* annullato */ });
   } else if (navigator.clipboard) {
@@ -414,17 +416,13 @@ function copiaSpesa() {
 }
 
 function renderScorte() {
-  const spesa = daComprare();
+  const daComprare = aperteSpesa().length;
   $('#scorte').innerHTML = `
     <h1>Scorte</h1>
-    <h2>Lista della spesa</h2>
-    <p class="sec">Qui compaiono gli articoli con ${SOGLIA_SPESA} unità o meno. Spunta quelli comprati, regola i pezzi con − e +, o usa Togli per toglierli dalla lista. Escono da soli quando li riporti sopra ${SOGLIA_SPESA}.</p>
-    <div class="card">
-      ${spesa.length ? spesa.map(rigaSpesa).join('') : '<p class="vuoto" style="padding:12px 0">Niente da comprare.</p>'}
+    <div class="card" style="padding:14px">
+      <p style="margin:0 0 6px">Quando un articolo scende a ${SOGLIA_SPESA} unità o meno, finisce da solo nella <b>lista della spesa</b>.</p>
+      <button class="link" data-tab="spesa">${daComprare ? `Apri la lista della spesa (${daComprare} da comprare) ›` : 'Apri la lista della spesa ›'}</button>
     </div>
-    ${spesa.some((s) => s.comprato) ? '<button class="link" data-action="spesa-carica" style="margin:0 4px 12px;display:block">Metti in scorta le voci comprate</button>' : ''}
-    ${spesa.some((s) => !s.comprato) ? '<button class="link" data-action="copia-spesa" style="margin:0 4px 12px;display:block">Condividi o copia la lista</button>' : ''}
-    ${dati.scorte.some((s) => s.tolto && s.quantita <= SOGLIA_SPESA) ? '<button class="link" data-action="spesa-rimetti" style="margin:0 4px 12px;display:block">Rimetti le voci tolte</button>' : ''}
 
     <h2>Tutte le scorte</h2>
     <div class="card">
@@ -447,6 +445,56 @@ function renderScorte() {
       <label class="campo"><span>Unità di misura (facoltativa)</span>
         <input name="unita" placeholder="Es. pz, kg, l, rotoli"></label>
       <button class="primario" type="submit">Aggiungi</button>
+    </form>
+  `;
+}
+
+function rigaSpesa(x) {
+  const s = x.scortaId ? trova(dati.scorte, x.scortaId) : null;
+  const sotto = s ? `In dispensa: ${s.quantita}${s.unita ? ' ' + s.unita : ''}` : x.unita;
+  return `<div class="riga att ${x.comprato ? 'fatta' : ''}">
+    <button class="check" data-action="spesa-toggle" data-id="${x.id}" aria-label="${x.comprato ? 'Rimetti in lista' : 'Segna come comprato'}: ${esc(x.nome)}">${x.comprato ? '✓' : ''}</button>
+    <span class="titolo">${esc(x.nome)}${sotto ? `<small>${esc(sotto)}</small>` : ''}</span>
+    ${x.comprato
+      ? `<span class="qta">× ${x.quantita}</span>`
+      : `<button class="tondo" data-action="spesa-meno" data-id="${x.id}" aria-label="Diminuisci ${esc(x.nome)}">−</button>
+         <span class="qta">${x.quantita}</span>
+         <button class="tondo primo" data-action="spesa-piu" data-id="${x.id}" aria-label="Aumenta ${esc(x.nome)}">+</button>`}
+    <button class="del" data-action="spesa-elimina" data-id="${x.id}" aria-label="Elimina ${esc(x.nome)}">×</button>
+  </div>`;
+}
+
+function renderSpesa() {
+  const aperte = aperteSpesa();
+  const comprate = dati.spesa.filter((x) => x.comprato);
+  $('#spesa').innerHTML = `
+    <h1>Spesa</h1>
+    <p class="sec" style="margin-top:0">Tocca il cerchio quando un articolo è nel carrello. Se è un articolo della dispensa, la quantità comprata viene aggiunta alle scorte.</p>
+
+    <h2>Da comprare</h2>
+    <div class="card">
+      ${aperte.length ? aperte.map(rigaSpesa).join('') : '<p class="vuoto" style="padding:12px 0">Niente da comprare. 🎉</p>'}
+    </div>
+    ${aperte.length ? '<button class="link" data-action="copia-spesa" style="margin:0 4px 12px">Condividi o copia la lista</button>' : ''}
+
+    ${comprate.length ? `
+      <h2>Nel carrello</h2>
+      <div class="card">${comprate.map(rigaSpesa).join('')}</div>
+      <button class="link" data-action="spesa-pulisci" style="margin:0 4px 12px;color:var(--red)">Svuota i comprati</button>
+    ` : ''}
+
+    <h2>Aggiungi alla lista</h2>
+    <form class="card form" id="formSpesa">
+      <label class="campo"><span>Cosa devi comprare</span>
+        <input name="nome" list="elencoScorte" placeholder="Es. Latte" autocomplete="off" required></label>
+      <datalist id="elencoScorte">${dati.scorte.map((s) => `<option value="${esc(s.nome)}"></option>`).join('')}</datalist>
+      <div class="due">
+        <label class="campo"><span>Quanti</span>
+          <input name="quantita" type="number" min="1" value="1" inputmode="numeric"></label>
+        <label class="campo"><span>Unità (facoltativa)</span>
+          <input name="unita" placeholder="Es. pz, kg"></label>
+      </div>
+      <button class="primario" type="submit">Aggiungi alla lista</button>
     </form>
   `;
 }
@@ -494,21 +542,34 @@ document.addEventListener('click', (e) => {
       if (!confirm('Rimuovere le attività completate di questa stanza?')) return;
       dati.attivita = dati.attivita.filter((a) => !(a.fatta && a.stanza === stanzaSel));
       break;
-    case 'meno': { const s = trova(dati.scorte, id); if (s) s.quantita = Math.max(0, s.quantita - 1); break; }
-    case 'piu': {
+    case 'meno': {
       const s = trova(dati.scorte, id);
-      if (s) { s.quantita += 1; if (s.quantita > SOGLIA_SPESA) azzeraSpesa(s); }
+      if (s) {
+        const prima = s.quantita;
+        s.quantita = Math.max(0, s.quantita - 1);
+        controllaSpesaAutomatica(s, prima);
+      }
       break;
     }
-    case 'spesa-check': { const s = trova(dati.scorte, id); if (s) { if (s.comprato) delete s.comprato; else s.comprato = true; } break; }
-    case 'spesa-meno': { const s = trova(dati.scorte, id); if (s) s.pezzi = Math.max(1, pezziSpesa(s) - 1); break; }
-    case 'spesa-piu': { const s = trova(dati.scorte, id); if (s) s.pezzi = pezziSpesa(s) + 1; break; }
-    case 'spesa-togli': { const s = trova(dati.scorte, id); if (s) { s.tolto = true; delete s.comprato; } break; }
-    case 'spesa-rimetti': dati.scorte.forEach((s) => { delete s.tolto; }); break;
-    case 'spesa-carica':
-      dati.scorte.filter((s) => s.comprato).forEach((s) => { s.quantita += pezziSpesa(s); azzeraSpesa(s); });
-      break;
+    case 'piu': { const s = trova(dati.scorte, id); if (s) s.quantita += 1; break; }
     case 'elimina-scorta': dati.scorte = dati.scorte.filter((s) => s.id !== id); break;
+    case 'spesa-toggle': {
+      // Se l'articolo viene dalla dispensa, comprarlo ne aumenta la scorta (e rimetterlo in lista la riporta indietro).
+      const x = trova(dati.spesa, id);
+      if (x) {
+        x.comprato = !x.comprato;
+        const s = x.scortaId ? trova(dati.scorte, x.scortaId) : null;
+        if (s) s.quantita = Math.max(0, s.quantita + (x.comprato ? x.quantita : -x.quantita));
+      }
+      break;
+    }
+    case 'spesa-piu': { const x = trova(dati.spesa, id); if (x) x.quantita += 1; break; }
+    case 'spesa-meno': { const x = trova(dati.spesa, id); if (x) x.quantita = Math.max(1, x.quantita - 1); break; }
+    case 'spesa-elimina': dati.spesa = dati.spesa.filter((x) => x.id !== id); break;
+    case 'spesa-pulisci':
+      if (!confirm('Togliere dalla lista gli articoli già comprati?')) return;
+      dati.spesa = dati.spesa.filter((x) => !x.comprato);
+      break;
     case 'esporta': esporta(); return;
     case 'copia-spesa': copiaSpesa(); return;
     case 'drive-collega': eseguiDrive(driveAccesso); return;
@@ -542,13 +603,31 @@ document.addEventListener('submit', (e) => {
   } else if (f.id === 'formScorta') {
     const nome = String(d.nome || '').trim();
     if (!nome) return;
-    dati.scorte.push({
+    const nuova = {
       id: uid(), nome,
       categoria: String(d.categoria || '').trim(),
       quantita: Math.max(0, parseInt(d.quantita, 10) || 0),
       minimo: Math.max(0, parseInt(d.minimo, 10) || 0),
       unita: String(d.unita || '').trim(),
-    });
+    };
+    dati.scorte.push(nuova);
+    controllaSpesaAutomatica(nuova);
+  } else if (f.id === 'formSpesa') {
+    const nome = String(d.nome || '').trim();
+    if (!nome) return;
+    const quantita = Math.max(1, parseInt(d.quantita, 10) || 1);
+    const minuscolo = nome.toLowerCase();
+    const scorta = dati.scorte.find((s) => s.nome.toLowerCase() === minuscolo);
+    const esistente = dati.spesa.find((x) => !x.comprato && (scorta ? x.scortaId === scorta.id : x.nome.toLowerCase() === minuscolo));
+    if (esistente) {
+      esistente.quantita += quantita; // niente doppioni: si somma
+    } else {
+      dati.spesa.push({
+        id: uid(), nome: scorta ? scorta.nome : nome, quantita,
+        unita: String(d.unita || '').trim() || (scorta ? scorta.unita : ''),
+        comprato: false, scortaId: scorta ? scorta.id : '', creataIl: adesso(),
+      });
+    }
   } else {
     return;
   }
@@ -620,10 +699,15 @@ function normalizza(j) {
       quantita: Math.max(0, parseInt(s.quantita, 10) || 0),
       minimo: Math.max(0, parseInt(s.minimo, 10) || 0),
       unita: String(s.unita || ''),
-      // Campi della lista della spesa: presenti solo quando servono, così le scorte normali restano uguali.
-      ...(parseInt(s.pezzi, 10) > 0 ? { pezzi: parseInt(s.pezzi, 10) } : {}),
-      ...(s.comprato ? { comprato: true } : {}),
-      ...(s.tolto ? { tolto: true } : {}),
+    })),
+    spesa: (Array.isArray(j.spesa) ? j.spesa : []).map((x) => ({
+      id: x.id || uid(),
+      nome: String(x.nome || ''),
+      quantita: Math.max(1, parseInt(x.quantita, 10) || 1),
+      unita: String(x.unita || ''),
+      comprato: Boolean(x.comprato),
+      scortaId: String(x.scortaId || ''),
+      creataIl: x.creataIl || adesso(),
     })),
   };
 }
@@ -671,7 +755,7 @@ async function driveIdFile() {
 async function driveCarica() {
   const id = await driveIdFile();
   const meta = id ? { name: DRIVE_FILE } : { name: DRIVE_FILE, parents: ['appDataFolder'] };
-  const json = JSON.stringify({ versione: 1, attivita: dati.attivita, scorte: dati.scorte });
+  const json = JSON.stringify({ versione: 1, attivita: dati.attivita, scorte: dati.scorte, spesa: dati.spesa });
   const b = 'casa' + uid();
   const corpo = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n`
     + `--${b}\r\nContent-Type: application/json\r\n\r\n${json}\r\n--${b}--`;
@@ -729,11 +813,11 @@ const FB_CONFIG = {
 const FB_VERSIONE = '11.0.2';
 const FLAG_INIT = 'casa.cloud.init';
 const FLAG_SPORCO = 'casa.cloud.sporco';
-const TIPI_CLOUD = ['attivita', 'scorte'];
+const TIPI_CLOUD = ['attivita', 'scorte', 'spesa'];
 
 // stato: caricamento | offline | sconnesso | connessione | attiva
 const nube = { stato: 'caricamento', utente: '', msg: '', pronta: false, api: null, sincronizza: null };
-const ultimoCloud = { attivita: new Map(), scorte: new Map() };
+const ultimoCloud = { attivita: new Map(), scorte: new Map(), spesa: new Map() };
 let renderRimandato = false;
 
 const stabile = (o) => JSON.stringify(Object.keys(o).sort().reduce((r, k) => { r[k] = o[k]; return r; }, {}));
@@ -747,10 +831,10 @@ function scriviFlag(k, v) {
 }
 
 function normalizzaLista(tipo, lista) {
-  const n = normalizza(tipo === 'attivita' ? { attivita: lista, scorte: [] } : { attivita: [], scorte: lista });
-  return tipo === 'attivita'
-    ? n.attivita.sort((a, b) => String(a.creataIl).localeCompare(String(b.creataIl)) || a.id.localeCompare(b.id))
-    : n.scorte.sort((a, b) => a.nome.localeCompare(b.nome, 'it') || a.id.localeCompare(b.id));
+  const n = normalizza({ attivita: [], scorte: [], spesa: [], [tipo]: lista });
+  const perData = (a, b) => String(a.creataIl).localeCompare(String(b.creataIl)) || a.id.localeCompare(b.id);
+  const perNome = (a, b) => a.nome.localeCompare(b.nome, 'it') || a.id.localeCompare(b.id);
+  return n[tipo].sort(tipo === 'scorte' ? perNome : perData);
 }
 
 function unisciListe(remote, locali) {
@@ -875,7 +959,7 @@ async function avviaNube() {
         const snap = await getDocs(collection(db, t));
         remote[t] = normalizzaLista(t, snap.docs.map((d) => ({ ...d.data(), id: d.id })));
       }
-      const haLocali = dati.attivita.length + dati.scorte.length > 0;
+      const haLocali = dati.attivita.length + dati.scorte.length + dati.spesa.length > 0;
       const daChiedere = haLocali && (!leggiFlag(FLAG_INIT) || leggiFlag(FLAG_SPORCO));
       const unire = daChiedere && confirm(
         'Vuoi aggiungere alle liste condivise anche i dati già presenti su questo telefono?\n\nOK = aggiungili\nAnnulla = usa solo le liste condivise',
