@@ -242,6 +242,7 @@ function salvaLocale() {
 
 // Salva su questo dispositivo e, se la condivisione è attiva, la manda agli altri.
 function salva() {
+  riallineaSpesa();
   salvaLocale();
   if (nube.sincronizza) nube.sincronizza();
   else if (nube.stato === 'offline') scriviFlag(FLAG_SPORCO, true);
@@ -372,23 +373,46 @@ function renderStanze() {
 // Quando una scorta scende a questa quantità (o meno) entra da sola nella lista della spesa.
 const SOGLIA_SPESA = 2;
 
-const aperteSpesa = () => dati.spesa.filter((x) => !x.comprato);
+// Voci da comprare: né già comprate né tolte a mano ("tolto" = nascosta ma ricordata, vedi sotto).
+const aperteSpesa = () => dati.spesa.filter((x) => !x.comprato && !x.tolto);
 
-// Aggiunge la scorta alla lista della spesa, senza doppioni tra gli articoli ancora da comprare.
-function aggiungiASpesa(s) {
-  if (dati.spesa.some((x) => !x.comprato && x.scortaId === s.id)) return;
-  dati.spesa.push({
-    id: uid(), nome: s.nome, quantita: 1, unita: s.unita || '',
-    comprato: false, scortaId: s.id, creataIl: adesso(),
-  });
-}
+// Quanti pezzi servono per tornare sopra la soglia.
+const pezziSuggeriti = (s) => Math.max(1, SOGLIA_SPESA + 1 - s.quantita);
 
-// Scatta solo quando la scorta SCENDE sotto la soglia: se hai tolto l'articolo dalla lista
-// e la scorta resta bassa, non lo rimette. quantitaPrima manca per gli articoli appena creati.
-function controllaSpesaAutomatica(s, quantitaPrima) {
-  if (s.quantita > SOGLIA_SPESA) return;
-  if (quantitaPrima !== undefined && quantitaPrima <= SOGLIA_SPESA) return;
-  aggiungiASpesa(s);
+// La lista segue lo stato delle scorte, non gli eventi: ogni scorta a SOGLIA_SPESA unità o meno
+// ha una voce da comprare, anche se era già bassa prima. Si richiama a ogni salvataggio.
+//  - Se togli a mano una voce mentre la scorta è bassa, resta come "tolto": non rientra da sola
+//    finché la scorta non risale sopra la soglia.
+//  - L'id è deterministico (auto-<scorta>-<n>): se due telefoni la creano nello stesso momento
+//    scrivono lo stesso documento e non nascono doppioni.
+//  - Finché non la modifichi tu, la quantità proposta segue la scorta.
+// Restituisce true se ha cambiato qualcosa.
+function riallineaSpesa() {
+  if (nube.stato === 'attiva' && !nube.pronta) return false; // aspetta i dati condivisi
+  let cambiato = false;
+  for (const s of dati.scorte) {
+    const sue = dati.spesa.filter((x) => x.scortaId === s.id);
+    if (s.quantita > SOGLIA_SPESA) {
+      const tolte = sue.filter((x) => x.tolto);
+      if (tolte.length) {
+        dati.spesa = dati.spesa.filter((x) => !tolte.includes(x));
+        cambiato = true;
+      }
+      continue;
+    }
+    const aperta = sue.find((x) => !x.comprato);
+    if (aperta) {
+      const q = pezziSuggeriti(s);
+      if (aperta.auto && !aperta.tolto && aperta.quantita !== q) { aperta.quantita = q; cambiato = true; }
+      continue;
+    }
+    dati.spesa.push({
+      id: `auto-${s.id}-${sue.length}`, nome: s.nome, quantita: pezziSuggeriti(s), unita: s.unita || '',
+      comprato: false, scortaId: s.id, auto: true, creataIl: adesso(),
+    });
+    cambiato = true;
+  }
+  return cambiato;
 }
 
 function rigaScorta(s, conElimina = true) {
@@ -467,6 +491,7 @@ function rigaSpesa(x) {
 function renderSpesa() {
   const aperte = aperteSpesa();
   const comprate = dati.spesa.filter((x) => x.comprato);
+  const tolte = dati.spesa.filter((x) => x.tolto && !x.comprato).length;
   $('#spesa').innerHTML = `
     <h1>Spesa</h1>
     <p class="sec" style="margin-top:0">Tocca il cerchio quando un articolo è nel carrello. Se è un articolo della dispensa, la quantità comprata viene aggiunta alle scorte.</p>
@@ -475,7 +500,8 @@ function renderSpesa() {
     <div class="card">
       ${aperte.length ? aperte.map(rigaSpesa).join('') : '<p class="vuoto" style="padding:12px 0">Niente da comprare. 🎉</p>'}
     </div>
-    ${aperte.length ? '<button class="link" data-action="copia-spesa" style="margin:0 4px 12px">Condividi o copia la lista</button>' : ''}
+    ${aperte.length ? '<button class="link" data-action="copia-spesa" style="display:block;margin:0 4px 12px">Condividi o copia la lista</button>' : ''}
+    ${tolte ? `<button class="link" data-action="spesa-rimetti" style="display:block;margin:0 4px 12px">Rimetti le voci tolte (${tolte})</button>` : ''}
 
     ${comprate.length ? `
       <h2>Nel carrello</h2>
@@ -544,11 +570,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'meno': {
       const s = trova(dati.scorte, id);
-      if (s) {
-        const prima = s.quantita;
-        s.quantita = Math.max(0, s.quantita - 1);
-        controllaSpesaAutomatica(s, prima);
-      }
+      if (s) s.quantita = Math.max(0, s.quantita - 1);
       break;
     }
     case 'piu': { const s = trova(dati.scorte, id); if (s) s.quantita += 1; break; }
@@ -563,9 +585,16 @@ document.addEventListener('click', (e) => {
       }
       break;
     }
-    case 'spesa-piu': { const x = trova(dati.spesa, id); if (x) x.quantita += 1; break; }
-    case 'spesa-meno': { const x = trova(dati.spesa, id); if (x) x.quantita = Math.max(1, x.quantita - 1); break; }
-    case 'spesa-elimina': dati.spesa = dati.spesa.filter((x) => x.id !== id); break;
+    case 'spesa-piu': { const x = trova(dati.spesa, id); if (x) { x.quantita += 1; x.auto = false; } break; }
+    case 'spesa-meno': { const x = trova(dati.spesa, id); if (x) { x.quantita = Math.max(1, x.quantita - 1); x.auto = false; } break; }
+    case 'spesa-elimina': {
+      const x = trova(dati.spesa, id);
+      const s = x && x.scortaId ? trova(dati.scorte, x.scortaId) : null;
+      if (x && s && !x.comprato && s.quantita <= SOGLIA_SPESA) x.tolto = true; // resta nascosta, non rientra da sola
+      else dati.spesa = dati.spesa.filter((y) => y.id !== id);
+      break;
+    }
+    case 'spesa-rimetti': dati.spesa.forEach((x) => { delete x.tolto; }); break;
     case 'spesa-pulisci':
       if (!confirm('Togliere dalla lista gli articoli già comprati?')) return;
       dati.spesa = dati.spesa.filter((x) => !x.comprato);
@@ -611,7 +640,6 @@ document.addEventListener('submit', (e) => {
       unita: String(d.unita || '').trim(),
     };
     dati.scorte.push(nuova);
-    controllaSpesaAutomatica(nuova);
   } else if (f.id === 'formSpesa') {
     const nome = String(d.nome || '').trim();
     if (!nome) return;
@@ -619,8 +647,13 @@ document.addEventListener('submit', (e) => {
     const minuscolo = nome.toLowerCase();
     const scorta = dati.scorte.find((s) => s.nome.toLowerCase() === minuscolo);
     const esistente = dati.spesa.find((x) => !x.comprato && (scorta ? x.scortaId === scorta.id : x.nome.toLowerCase() === minuscolo));
-    if (esistente) {
+    if (esistente && esistente.tolto) {
+      delete esistente.tolto; // era stata tolta a mano: la rimetti con la quantità scelta ora
+      esistente.quantita = quantita;
+      esistente.auto = false;
+    } else if (esistente) {
       esistente.quantita += quantita; // niente doppioni: si somma
+      esistente.auto = false;
     } else {
       dati.spesa.push({
         id: uid(), nome: scorta ? scorta.nome : nome, quantita,
@@ -708,6 +741,9 @@ function normalizza(j) {
       comprato: Boolean(x.comprato),
       scortaId: String(x.scortaId || ''),
       creataIl: x.creataIl || adesso(),
+      // Presenti solo quando servono, così le voci normali restano uguali.
+      ...(x.auto ? { auto: true } : {}),
+      ...(x.tolto ? { tolto: true } : {}),
     })),
   };
 }
@@ -973,6 +1009,7 @@ async function avviaNube() {
       nube.pronta = true;
       nube.stato = 'attiva';
       nube.msg = '';
+      riallineaSpesa();
       salvaLocale();
       sincronizza();
       render();
@@ -981,6 +1018,7 @@ async function avviaNube() {
           const lista = normalizzaLista(t, snap.docs.map((d) => ({ ...d.data(), id: d.id })));
           ultimoCloud[t] = new Map(lista.map((x) => [x.id, stabile(x)]));
           dati[t] = lista;
+          if (riallineaSpesa()) sincronizza(); // se cambiano le scorte, la lista si adegua anche qui
           salvaLocale();
           renderSicuro();
         }, errore));
@@ -1015,6 +1053,7 @@ async function avviaNube() {
   });
 }
 
+if (riallineaSpesa()) salvaLocale(); // scorte già basse prima dell'aggiornamento entrano subito in lista
 render();
 vaiTab('generale');
 avviaNube();
