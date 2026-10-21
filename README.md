@@ -20,7 +20,7 @@ piano gratuito Spark, località `eur3`). Dalla scheda Generale → **Condivision
 chi accede vede le stesse liste e le modifiche arrivano subito agli altri telefoni.
 
 - **Chi può entrare**: solo i due account indicati nelle regole di sicurezza del database
-  (utente1@example.com e utente2@example.com). Le regole sono pubblicate nella console Firebase
+  (Claudio e Monica: gli indirizzi stanno nelle regole, non in questo file). Le regole sono pubblicate nella console Firebase
   (*Firestore → Regole*); per cambiare le persone vanno modificate lì.
 - **Come sono salvati i dati**: un documento per voce nelle collezioni `attivita` e `scorte`.
   Si manda solo ciò che cambia, quindi se i due modificano cose diverse non si sovrascrivono.
@@ -33,6 +33,21 @@ chi accede vede le stesse liste e le modifiche arrivano subito agli altri telefo
   (i due indirizzi sopra). Per aggiungerne altri: Google Auth Platform → Pubblico → Utenti di prova.
 - **Importa JSON** con la condivisione attiva sostituisce le liste per tutti.
 - Con la condivisione attiva la sezione Google Drive sparisce, per evitare di sovrascrivere le liste con una copia vecchia.
+
+## Impegni che si ripetono
+
+Nel modulo "Nuova attività" la scelta **Si ripete** (Mai, Ogni giorno, Ogni settimana, Ogni mese) fa tornare
+l'impegno da solo. Si può cambiare anche dopo, toccando la scritta sotto il titolo.
+
+- Campi aggiunti all'impegno (solo se si ripete): `ripeti`, `inizio` (la prima volta, AAAA-MM-GG) e `fattaIl`
+  (l'ultima volta che l'hai segnato fatto). Le date in cui torna si calcolano da `inizio`: restano agganciate
+  allo stesso giorno della settimana o del mese (il 31 diventa l'ultimo giorno nei mesi più corti).
+- Segnarlo fatto vale per il giro in corso: va tra le *Completate* con "torna il …" e al giro dopo è di nuovo da fare.
+  Se salti un giro non si accumulano: conta solo l'ultimo.
+- Se la prima volta è nel futuro, sta in *In programma* finché non arriva la data.
+- "Rimuovi le completate" non tocca gli impegni ripetuti.
+- Il cambio di giorno si controlla ogni minuto e quando si riapre l'app, quindi a mezzanotte la lista si aggiorna da sola.
+- Non ci sono notifiche: l'app non può avvisarti, i ripetuti compaiono quando la apri.
 
 ## Google Drive (copia personale, senza condivisione)
 

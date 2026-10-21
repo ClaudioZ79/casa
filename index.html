@@ -109,13 +109,17 @@
     display: grid; place-items: center; color: #fff; font-weight: 700;
   }
   .att.fatta .check { background: var(--accent); }
-  .att.fatta .titolo { text-decoration: line-through; color: var(--sec); }
+  .att.fatta .titolo { color: var(--sec); }
+  .att.fatta .testo { text-decoration: line-through; } /* barrato solo il titolo, non le scritte sotto */
   /* Le stelle sono un pulsante: toccandole l'urgenza cambia (1 → 2 → 3 → 1). Le vuote restano in grigio. */
   .stelle {
     flex: none; border: 0; background: none; color: var(--orange); font-size: 15px; letter-spacing: 1px;
     padding: 0 4px; min-height: 44px; min-width: 52px; white-space: nowrap;
   }
   .stelle .vuote { color: rgba(120, 120, 128, .35); }
+  .segnaposto { width: 26px; flex: none; }
+  .ripeti { display: block; border: 0; background: none; padding: 6px 0 2px; font-size: 13px; color: var(--sec); text-align: left; }
+  .ripeti.attiva { color: var(--accent); }
   .del { border: 0; background: none; color: var(--red); font-size: 22px; padding: 4px 8px; line-height: 1; }
 
   .scorta .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -161,6 +165,7 @@
   .pillola input:checked + span { background: var(--sec); color: #fff; }
   .pillola.claudio input:checked + span { background: var(--accent); color: #fff; }
   .pillola.monica input:checked + span { background: var(--rosa); color: #fff; }
+  .pillola.rip input:checked + span { background: var(--accent); color: #fff; }
   .pillola input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
   .titolo small { display: block; color: var(--sec); font-size: 13px; }
 
@@ -259,6 +264,85 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const trova = (lista, id) => lista.find((x) => x.id === id);
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/* ---------- Ripetizioni: ogni giorno / settimana / mese ----------
+   Un impegno che si ripete ha tre campi in più: ripeti (giorno | settimana | mese),
+   inizio (la prima volta, formato AAAA-MM-GG) e fattaIl (l'ultima volta che l'hai segnato fatto).
+   Le date in cui "torna" si calcolano da inizio, quindi non serve salvarle e restano sempre
+   agganciate allo stesso giorno (lo stesso giorno della settimana o del mese).
+   Stato di un impegno: 'aperta' = da fare ora · 'fatta' = fatta (per i ripetuti: in questo giro)
+   · 'programmata' = non è ancora iniziato. */
+
+let OGGI_FORZATO = null; // serve solo per le prove con date simulate
+const due = (n) => String(n).padStart(2, '0');
+const isoData = (d) => `${d.getFullYear()}-${due(d.getMonth() + 1)}-${due(d.getDate())}`;
+const oggi = () => OGGI_FORZATO || isoData(new Date());
+const daIso = (s) => { const [y, m, g] = s.split('-').map(Number); return new Date(y, m - 1, g); };
+const RIPETIZIONI = { giorno: 'ogni giorno', settimana: 'ogni settimana', mese: 'ogni mese' };
+const ORDINE_RIPETIZIONI = ['', 'giorno', 'settimana', 'mese'];
+const ripetizioneValida = (v) => Object.prototype.hasOwnProperty.call(RIPETIZIONI, v);
+// Una data è valida se, riconvertita in testo, torna identica: JavaScript "aggiusta" da solo il 45 del 13° mese.
+const dataValida = (s) => typeof s === 'string' && /^\d{4}-\d\d-\d\d$/.test(s) && isoData(daIso(s)) === s;
+
+// La k-esima data in cui l'impegno torna (k = 0 è la prima volta).
+function occorrenza(a, k) {
+  const b = daIso(a.inizio);
+  const y = b.getFullYear(); const m = b.getMonth(); const g = b.getDate();
+  if (a.ripeti === 'giorno') return new Date(y, m, g + k);
+  if (a.ripeti === 'settimana') return new Date(y, m, g + 7 * k);
+  const ultimoDelMese = new Date(y, m + k + 1, 0).getDate(); // il 31 in un mese corto diventa l'ultimo giorno
+  return new Date(y, m + k, Math.min(g, ultimoDelMese));
+}
+
+// ultima: la data più recente (oggi compreso) in cui era da fare · prossima: la prima dopo oggi.
+function ciclo(a) {
+  const t = daIso(oggi());
+  const b = daIso(a.inizio);
+  if (t < b) return { ultima: null, prossima: isoData(b) };
+  let k;
+  if (a.ripeti === 'mese') {
+    k = (t.getFullYear() - b.getFullYear()) * 12 + (t.getMonth() - b.getMonth());
+    if (occorrenza(a, k) > t) k -= 1;
+  } else {
+    const giorni = Math.round((t - b) / 86400000); // round: assorbe l'ora legale
+    k = a.ripeti === 'settimana' ? Math.floor(giorni / 7) : giorni;
+  }
+  return { ultima: isoData(occorrenza(a, k)), prossima: isoData(occorrenza(a, k + 1)) };
+}
+
+function statoAttivita(a) {
+  if (!a.ripeti) return a.fatta ? 'fatta' : 'aperta';
+  const c = ciclo(a);
+  if (!c.ultima) return 'programmata';
+  return a.fattaIl && a.fattaIl >= c.ultima ? 'fatta' : 'aperta';
+}
+
+const dataBreve = (iso) => daIso(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+
+function testoRipetizione(a) {
+  if (!a.ripeti) return 'Non si ripete';
+  const base = '↻ ' + cap(RIPETIZIONI[a.ripeti]);
+  const stato = statoAttivita(a);
+  if (stato === 'programmata') return `${base} · parte il ${dataBreve(ciclo(a).prossima)}`;
+  if (stato === 'fatta') return `${base} · torna il ${dataBreve(ciclo(a).prossima)}`;
+  return base;
+}
+
+// Tocco sull'etichetta: Non si ripete → ogni giorno → ogni settimana → ogni mese → Non si ripete.
+function cambiaRipetizione(a) {
+  const eraFatta = statoAttivita(a) === 'fatta';
+  const nuova = ORDINE_RIPETIZIONI[(ORDINE_RIPETIZIONI.indexOf(a.ripeti || '') + 1) % ORDINE_RIPETIZIONI.length];
+  if (!a.ripeti && nuova) { // da singolo a ripetuto: parte da oggi, e se era fatto vale "fatto oggi"
+    a.inizio = oggi();
+    a.fattaIl = a.fatta ? oggi() : '';
+    a.fatta = false;
+  } else if (a.ripeti && !nuova) { // da ripetuto a singolo: resta com'è adesso
+    a.fatta = eraFatta;
+    delete a.inizio;
+    delete a.fattaIl;
+  }
+  if (nuova) a.ripeti = nuova; else delete a.ripeti;
+}
+
 function render() {
   renderGenerale();
   renderStanze();
@@ -267,8 +351,9 @@ function render() {
 }
 
 function renderGenerale() {
-  const urgenti = dati.attivita.filter((a) => !a.fatta && a.urgenza === 3).length;
-  const fatte = dati.attivita.filter((a) => a.fatta).length;
+  const urgenti = dati.attivita.filter((a) => statoAttivita(a) === 'aperta' && a.urgenza === 3).length;
+  const fatte = dati.attivita.filter((a) => statoAttivita(a) === 'fatta').length;
+  const iniziate = dati.attivita.filter((a) => statoAttivita(a) !== 'programmata').length;
   const esaurimento = dati.scorte.filter((s) => s.quantita <= s.minimo).length;
   const oggi = cap(new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' }));
 
@@ -277,13 +362,13 @@ function renderGenerale() {
     <p class="data">${esc(oggi)}</p>
     <div class="grid">
       <div class="card stat"><b>${urgenti}</b><span>Urgenti ancora da fare</span></div>
-      <div class="card stat"><b>${fatte} / ${dati.attivita.length}</b><span>Attività completate</span></div>
+      <div class="card stat"><b>${fatte} / ${iniziate}</b><span>Attività completate</span></div>
       <div class="card stat largo"><b>${esaurimento}</b><span>Scorte in esaurimento</span></div>
     </div>
     <h2>Stanza per stanza</h2>
     <p class="sec">Sotto ogni stanza vedi gli impegni urgenti ancora da fare. Tocca il cerchio quando è fatto, il nome per cambiare chi lo fa, o la stanza per aprirla.</p>
     ${STANZE.map((s) => {
-      const aperte = dati.attivita.filter((a) => a.stanza === s.id && !a.fatta);
+      const aperte = dati.attivita.filter((a) => a.stanza === s.id && statoAttivita(a) === 'aperta');
       const urgentiStanza = aperte.filter((a) => a.urgenza === 3);
       const u = urgentiStanza.length;
       return `<div class="card">
@@ -318,9 +403,17 @@ function renderGenerale() {
 // compatta: usata nella Generale, nasconde stelle ed Elimina (tutte le righe sono già urgenti).
 function rigaAttivita(a, compatta = false) {
   const chi = nomePersona(a.assegnata);
-  return `<div class="riga att ${a.fatta ? 'fatta' : ''}">
-    <button class="check" data-action="toggle" data-id="${a.id}" aria-label="Segna ${esc(a.titolo)}">${a.fatta ? '✓' : ''}</button>
-    <span class="titolo">${esc(a.titolo)}</span>
+  const stato = statoAttivita(a);
+  const fatta = stato === 'fatta';
+  // Nella Generale la ripetizione è solo un'indicazione; nelle stanze è un pulsante che la cambia.
+  const ripetizione = compatta
+    ? (a.ripeti ? `<small>${esc(testoRipetizione(a))}</small>` : '')
+    : `<button class="ripeti ${a.ripeti ? 'attiva' : ''}" data-action="ripeti" data-id="${a.id}" aria-label="Si ripete: ${a.ripeti ? RIPETIZIONI[a.ripeti] : 'no'}. Tocca per cambiare">${esc(testoRipetizione(a))}</button>`;
+  return `<div class="riga att ${fatta ? 'fatta' : ''}">
+    ${stato === 'programmata'
+      ? '<span class="segnaposto"></span>'
+      : `<button class="check" data-action="toggle" data-id="${a.id}" aria-label="Segna ${esc(a.titolo)}">${fatta ? '✓' : ''}</button>`}
+    <span class="titolo"><span class="testo">${esc(a.titolo)}</span>${ripetizione}</span>
     <button class="persona ${chi ? a.assegnata : 'nessuno'}" data-action="assegna" data-id="${a.id}" aria-label="Chi deve farlo: ${chi || 'nessuno'}. Tocca per cambiare">${chi ? esc(chi) : 'Assegna'}</button>
     ${compatta ? '' : `<button class="stelle" data-action="urgenza" data-id="${a.id}" aria-label="Urgenza: ${a.urgenza} stelle su 3. Tocca per cambiarla">${'★'.repeat(a.urgenza)}<span class="vuote">${'★'.repeat(3 - a.urgenza)}</span></button>
     <button class="del" data-action="elimina" data-id="${a.id}" aria-label="Elimina ${esc(a.titolo)}">×</button>`}
@@ -329,8 +422,9 @@ function rigaAttivita(a, compatta = false) {
 
 function renderStanze() {
   const tutte = dati.attivita.filter((a) => a.stanza === stanzaSel);
-  const aperte = tutte.filter((a) => !a.fatta);
-  const fatte = tutte.filter((a) => a.fatta);
+  const aperte = tutte.filter((a) => statoAttivita(a) === 'aperta');
+  const fatte = tutte.filter((a) => statoAttivita(a) === 'fatta');
+  const programmate = tutte.filter((a) => statoAttivita(a) === 'programmata');
 
   const gruppi = [3, 2, 1]
     .map((u) => ({ u, voci: aperte.filter((a) => a.urgenza === u) }))
@@ -342,7 +436,7 @@ function renderStanze() {
       ${STANZE.map((s) => `<button class="chip ${s.id === stanzaSel ? 'on' : ''}" data-stanza="${s.id}">${s.icona} ${esc(s.nome)}</button>`).join('')}
     </div>
 
-    ${gruppi.length ? '<p class="sec" style="margin:0 4px 4px">Tocca le stelle di un impegno per cambiarne l\'urgenza, o il nome per cambiare chi lo fa.</p>' : ''}
+    ${tutte.length ? '<p class="sec" style="margin:0 4px 4px">Tocca le stelle per cambiare l\'urgenza, il nome per cambiare chi lo fa, la scritta sotto il titolo per farlo ripetere.</p>' : ''}
     ${gruppi.length === 0 ? '<div class="card"><p class="vuoto" style="padding:12px 0">Nessuna cosa da fare in questa stanza.</p></div>' : ''}
     ${gruppi.map((g) => `
       <h2>${URG[g.u].etichetta}</h2>
@@ -353,7 +447,13 @@ function renderStanze() {
     ${fatte.length ? `
       <h2>Completate</h2>
       <div class="card">${fatte.map((a) => rigaAttivita(a)).join('')}</div>
-      <button class="link" data-action="pulisci" style="margin:0 4px 12px;color:var(--red)">Rimuovi le completate</button>
+      ${fatte.some((a) => !a.ripeti) ? '<button class="link" data-action="pulisci" style="margin:0 4px 12px;color:var(--red)">Rimuovi le completate</button>' : ''}
+    ` : ''}
+
+    ${programmate.length ? `
+      <h2>In programma</h2>
+      <p class="sec">Non sono ancora iniziati: compariranno da soli nella data indicata.</p>
+      <div class="card">${programmate.map((a) => rigaAttivita(a)).join('')}</div>
     ` : ''}
 
     <h2>Nuova attività</h2>
@@ -371,6 +471,13 @@ function renderStanze() {
           <label class="pillola"><input type="radio" name="assegnata" value="" checked><span>Nessuno</span></label>
           ${PERSONE.map((p) => `<label class="pillola ${p.id}"><input type="radio" name="assegnata" value="${p.id}"><span>${esc(p.nome)}</span></label>`).join('')}
         </div></div>
+      <div class="campo"><span>Si ripete</span>
+        <div class="scelta" role="radiogroup" aria-label="Si ripete">
+          <label class="pillola"><input type="radio" name="ripeti" value="" checked><span>Mai</span></label>
+          ${Object.entries(RIPETIZIONI).map(([v, t]) => `<label class="pillola rip"><input type="radio" name="ripeti" value="${v}"><span>${cap(t)}</span></label>`).join('')}
+        </div></div>
+      <label class="campo" id="campoInizio" hidden><span>Prima volta</span>
+        <input type="date" name="inizio" value="${oggi()}"></label>
       <button class="primario" type="submit">Aggiungi a ${esc(STANZE.find((s) => s.id === stanzaSel).nome)}</button>
     </form>
   `;
@@ -484,7 +591,7 @@ function rigaSpesa(x) {
   const sotto = s ? `In dispensa: ${s.quantita}${s.unita ? ' ' + s.unita : ''}` : x.unita;
   return `<div class="riga att ${x.comprato ? 'fatta' : ''}">
     <button class="check" data-action="spesa-toggle" data-id="${x.id}" aria-label="${x.comprato ? 'Rimetti in lista' : 'Segna come comprato'}: ${esc(x.nome)}">${x.comprato ? '✓' : ''}</button>
-    <span class="titolo">${esc(x.nome)}${sotto ? `<small>${esc(sotto)}</small>` : ''}</span>
+    <span class="titolo"><span class="testo">${esc(x.nome)}</span>${sotto ? `<small>${esc(sotto)}</small>` : ''}</span>
     ${x.comprato
       ? `<span class="qta">× ${x.quantita}</span>`
       : `<button class="tondo" data-action="spesa-meno" data-id="${x.id}" aria-label="Diminuisci ${esc(x.nome)}">−</button>
@@ -559,7 +666,13 @@ document.addEventListener('click', (e) => {
 
   const id = t.dataset.id;
   switch (t.dataset.action) {
-    case 'toggle': { const a = trova(dati.attivita, id); if (a) a.fatta = !a.fatta; break; }
+    case 'toggle': {
+      const a = trova(dati.attivita, id);
+      if (a && a.ripeti) a.fattaIl = statoAttivita(a) === 'fatta' ? '' : oggi(); // ripetuto: vale per questo giro
+      else if (a) a.fatta = !a.fatta;
+      break;
+    }
+    case 'ripeti': { const a = trova(dati.attivita, id); if (a) cambiaRipetizione(a); break; }
     case 'elimina': dati.attivita = dati.attivita.filter((a) => a.id !== id); break;
     case 'urgenza': {
       // 1 stella → 2 → 3 → di nuovo 1: l'impegno passa da solo nel gruppo giusto
@@ -636,11 +749,17 @@ document.addEventListener('submit', (e) => {
   if (f.id === 'formAtt') {
     const titolo = String(d.titolo || '').trim();
     if (!titolo) return;
-    dati.attivita.push({
+    const nuovaAttivita = {
       id: uid(), titolo, stanza: stanzaSel,
       urgenza: Number(d.urgenza), fatta: false, creataIl: adesso(),
       assegnata: PERSONE.some((p) => p.id === d.assegnata) ? d.assegnata : '',
-    });
+    };
+    if (ripetizioneValida(d.ripeti)) {
+      nuovaAttivita.ripeti = d.ripeti;
+      nuovaAttivita.inizio = dataValida(d.inizio) ? d.inizio : oggi();
+      nuovaAttivita.fattaIl = '';
+    }
+    dati.attivita.push(nuovaAttivita);
   } else if (f.id === 'formScorta') {
     const nome = String(d.nome || '').trim();
     if (!nome) return;
@@ -678,6 +797,13 @@ document.addEventListener('submit', (e) => {
   }
   salva();
   render();
+});
+
+// Il campo "Prima volta" serve solo se l'impegno si ripete.
+document.addEventListener('change', (e) => {
+  if (e.target.name !== 'ripeti') return;
+  const campo = document.getElementById('campoInizio');
+  if (campo) campo.hidden = !e.target.value;
 });
 
 document.addEventListener('change', (e) => {
@@ -736,6 +862,10 @@ function normalizza(j) {
       fatta: Boolean(a.fatta),
       creataIl: a.creataIl || adesso(),
       assegnata: PERSONE.some((p) => p.id === a.assegnata) ? a.assegnata : '',
+      // Campi delle ripetizioni: presenti solo per gli impegni che si ripetono.
+      ...(ripetizioneValida(a.ripeti)
+        ? { ripeti: a.ripeti, inizio: dataValida(a.inizio) ? a.inizio : oggi(), fattaIl: dataValida(a.fattaIl) ? a.fattaIl : '' }
+        : {}),
     })),
     scorte: j.scorte.map((s) => ({
       id: s.id || uid(),
@@ -1064,6 +1194,16 @@ async function avviaNube() {
     avvia();
   });
 }
+
+// A mezzanotte gli impegni ripetuti tornano da fare: se l'app resta aperta, si aggiorna da sola al cambio di giorno.
+let giornoCorrente = oggi();
+function controllaGiorno() {
+  if (oggi() === giornoCorrente) return;
+  giornoCorrente = oggi();
+  renderSicuro();
+}
+setInterval(controllaGiorno, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) controllaGiorno(); });
 
 if (riallineaSpesa()) salvaLocale(); // scorte già basse prima dell'aggiornamento entrano subito in lista
 render();
