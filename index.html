@@ -110,7 +110,12 @@
   }
   .att.fatta .check { background: var(--accent); }
   .att.fatta .titolo { text-decoration: line-through; color: var(--sec); }
-  .stelle { color: var(--orange); font-size: 13px; letter-spacing: 1px; }
+  /* Le stelle sono un pulsante: toccandole l'urgenza cambia (1 → 2 → 3 → 1). Le vuote restano in grigio. */
+  .stelle {
+    flex: none; border: 0; background: none; color: var(--orange); font-size: 15px; letter-spacing: 1px;
+    padding: 0 4px; min-height: 44px; min-width: 52px; white-space: nowrap;
+  }
+  .stelle .vuote { color: rgba(120, 120, 128, .35); }
   .del { border: 0; background: none; color: var(--red); font-size: 22px; padding: 4px 8px; line-height: 1; }
 
   .scorta .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -317,7 +322,7 @@ function rigaAttivita(a, compatta = false) {
     <button class="check" data-action="toggle" data-id="${a.id}" aria-label="Segna ${esc(a.titolo)}">${a.fatta ? '✓' : ''}</button>
     <span class="titolo">${esc(a.titolo)}</span>
     <button class="persona ${chi ? a.assegnata : 'nessuno'}" data-action="assegna" data-id="${a.id}" aria-label="Chi deve farlo: ${chi || 'nessuno'}. Tocca per cambiare">${chi ? esc(chi) : 'Assegna'}</button>
-    ${compatta ? '' : `<span class="stelle">${'★'.repeat(a.urgenza)}</span>
+    ${compatta ? '' : `<button class="stelle" data-action="urgenza" data-id="${a.id}" aria-label="Urgenza: ${a.urgenza} stelle su 3. Tocca per cambiarla">${'★'.repeat(a.urgenza)}<span class="vuote">${'★'.repeat(3 - a.urgenza)}</span></button>
     <button class="del" data-action="elimina" data-id="${a.id}" aria-label="Elimina ${esc(a.titolo)}">×</button>`}
   </div>`;
 }
@@ -337,6 +342,7 @@ function renderStanze() {
       ${STANZE.map((s) => `<button class="chip ${s.id === stanzaSel ? 'on' : ''}" data-stanza="${s.id}">${s.icona} ${esc(s.nome)}</button>`).join('')}
     </div>
 
+    ${gruppi.length ? '<p class="sec" style="margin:0 4px 4px">Tocca le stelle di un impegno per cambiarne l\'urgenza, o il nome per cambiare chi lo fa.</p>' : ''}
     ${gruppi.length === 0 ? '<div class="card"><p class="vuoto" style="padding:12px 0">Nessuna cosa da fare in questa stanza.</p></div>' : ''}
     ${gruppi.map((g) => `
       <h2>${URG[g.u].etichetta}</h2>
@@ -555,6 +561,12 @@ document.addEventListener('click', (e) => {
   switch (t.dataset.action) {
     case 'toggle': { const a = trova(dati.attivita, id); if (a) a.fatta = !a.fatta; break; }
     case 'elimina': dati.attivita = dati.attivita.filter((a) => a.id !== id); break;
+    case 'urgenza': {
+      // 1 stella → 2 → 3 → di nuovo 1: l'impegno passa da solo nel gruppo giusto
+      const a = trova(dati.attivita, id);
+      if (a) a.urgenza = a.urgenza >= 3 ? 1 : a.urgenza + 1;
+      break;
+    }
     case 'assegna': {
       // Nessuno -> Claudio -> Monica -> Nessuno
       const a = trova(dati.attivita, id);
