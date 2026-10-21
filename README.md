@@ -34,6 +34,16 @@ chi accede vede le stesse liste e le modifiche arrivano subito agli altri telefo
 - **Importa JSON** con la condivisione attiva sostituisce le liste per tutti.
 - Con la condivisione attiva la sezione Google Drive sparisce, per evitare di sovrascrivere le liste con una copia vecchia.
 
+## Correggere i nomi
+
+Toccando il nome di un impegno, di una scorta o di una voce della spesa la riga diventa un campo con **Salva** e
+**Annulla** (anche Invio e Esc). Gli spazi in più vengono tolti e il nome non può restare vuoto.
+
+- Rinominare una **scorta** cambia il nome anche delle sue voci nella lista della spesa (anche quelle già comprate).
+- Rinominare dalla **Spesa** una voce collegata a una scorta cambia il nome della scorta; una voce libera cambia solo se stessa.
+- Se la correzione arriva dall'altro telefono, le voci della spesa si allineano da sole.
+- Mentre stai scrivendo, un aggiornamento in arrivo non cancella il testo.
+
 ## Impegni che si ripetono
 
 Nel modulo "Nuova attività" la scelta **Si ripete** (Mai, Ogni giorno, Ogni settimana, Ogni mese) fa tornare

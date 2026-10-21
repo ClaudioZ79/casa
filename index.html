@@ -118,6 +118,15 @@
   }
   .stelle .vuote { color: rgba(120, 120, 128, .35); }
   .segnaposto { width: 26px; flex: none; }
+  /* Il nome è un pulsante senza aspetto da pulsante: toccandolo si corregge */
+  .modificabile { border: 0; background: none; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: text; }
+  .info .modificabile { display: block; }
+  .riga.modifica { flex-wrap: wrap; gap: 8px; }
+  .modifica input {
+    flex: 1 1 150px; min-width: 0; border: 0; border-radius: 12px; padding: 10px 12px;
+    background: rgba(120, 120, 128, .12); font: inherit; color: inherit;
+  }
+  .primario.piccolo { padding: 10px 16px; }
   .ripeti { display: block; border: 0; background: none; padding: 6px 0 2px; font-size: 13px; color: var(--sec); text-align: left; }
   .ripeti.attiva { color: var(--accent); }
   .del { border: 0; background: none; color: var(--red); font-size: 22px; padding: 4px 8px; line-height: 1; }
@@ -400,8 +409,52 @@ function renderGenerale() {
   `;
 }
 
+/* ---------- Correggere i nomi ----------
+   Toccando il nome di un impegno, di una scorta o di una voce della spesa la riga diventa un campo
+   con Salva e Annulla. "modifica" ricorda quale riga stai correggendo e il testo già scritto,
+   così un aggiornamento in arrivo dall'altro telefono non lo cancella. */
+
+let modifica = null; // { tipo: 'attivita' | 'scorta' | 'spesa', id, testo? }
+const inModifica = (tipo, id) => !!modifica && modifica.tipo === tipo && modifica.id === id;
+
+function htmlModifica(tipo, id, corrente) {
+  const valore = modifica.testo !== undefined ? modifica.testo : corrente;
+  return `<form class="riga modifica" data-tipo="${tipo}" data-id="${id}">
+    <input name="testo" value="${esc(valore)}" maxlength="80" required autocomplete="off" aria-label="Nuovo nome">
+    <button class="primario piccolo" type="submit">Salva</button>
+    <button class="link" type="button" data-action="modifica-annulla">Annulla</button>
+  </form>`;
+}
+
+// Cambia il nome. Il nome di una scorta si porta dietro le sue voci nella lista della spesa.
+function rinomina(tipo, id, nuovo) {
+  if (tipo === 'attivita') {
+    const a = trova(dati.attivita, id);
+    if (a) a.titolo = nuovo;
+  } else if (tipo === 'scorta') {
+    const s = trova(dati.scorte, id);
+    if (s) {
+      s.nome = nuovo;
+      dati.spesa.forEach((x) => { if (x.scortaId === id) x.nome = nuovo; });
+    }
+  } else if (tipo === 'spesa') {
+    const x = trova(dati.spesa, id);
+    if (x && x.scortaId && trova(dati.scorte, x.scortaId)) rinomina('scorta', x.scortaId, nuovo);
+    else if (x) x.nome = nuovo;
+  }
+}
+
+// Mette il cursore nel campo appena aperto (nella pagina che si sta guardando).
+function focusModifica() {
+  const campo = document.querySelector('.pagina:not([hidden]) form.modifica input[name="testo"]');
+  if (!campo) return;
+  campo.focus();
+  campo.setSelectionRange(campo.value.length, campo.value.length);
+}
+
 // compatta: usata nella Generale, nasconde stelle ed Elimina (tutte le righe sono già urgenti).
 function rigaAttivita(a, compatta = false) {
+  if (inModifica('attivita', a.id)) return htmlModifica('attivita', a.id, a.titolo);
   const chi = nomePersona(a.assegnata);
   const stato = statoAttivita(a);
   const fatta = stato === 'fatta';
@@ -413,7 +466,7 @@ function rigaAttivita(a, compatta = false) {
     ${stato === 'programmata'
       ? '<span class="segnaposto"></span>'
       : `<button class="check" data-action="toggle" data-id="${a.id}" aria-label="Segna ${esc(a.titolo)}">${fatta ? '✓' : ''}</button>`}
-    <span class="titolo"><span class="testo">${esc(a.titolo)}</span>${ripetizione}</span>
+    <span class="titolo"><button class="testo modificabile" data-action="modifica-inizia" data-tipo="attivita" data-id="${a.id}" aria-label="Correggi il nome: ${esc(a.titolo)}">${esc(a.titolo)}</button>${ripetizione}</span>
     <button class="persona ${chi ? a.assegnata : 'nessuno'}" data-action="assegna" data-id="${a.id}" aria-label="Chi deve farlo: ${chi || 'nessuno'}. Tocca per cambiare">${chi ? esc(chi) : 'Assegna'}</button>
     ${compatta ? '' : `<button class="stelle" data-action="urgenza" data-id="${a.id}" aria-label="Urgenza: ${a.urgenza} stelle su 3. Tocca per cambiarla">${'★'.repeat(a.urgenza)}<span class="vuote">${'★'.repeat(3 - a.urgenza)}</span></button>
     <button class="del" data-action="elimina" data-id="${a.id}" aria-label="Elimina ${esc(a.titolo)}">×</button>`}
@@ -436,7 +489,7 @@ function renderStanze() {
       ${STANZE.map((s) => `<button class="chip ${s.id === stanzaSel ? 'on' : ''}" data-stanza="${s.id}">${s.icona} ${esc(s.nome)}</button>`).join('')}
     </div>
 
-    ${tutte.length ? '<p class="sec" style="margin:0 4px 4px">Tocca le stelle per cambiare l\'urgenza, il nome per cambiare chi lo fa, la scritta sotto il titolo per farlo ripetere.</p>' : ''}
+    ${tutte.length ? '<p class="sec" style="margin:0 4px 4px">Tocca le stelle per cambiare l\'urgenza, il nome per cambiare chi lo fa, la scritta sotto il titolo per farlo ripetere. Tocca il titolo per correggerlo.</p>' : ''}
     ${gruppi.length === 0 ? '<div class="card"><p class="vuoto" style="padding:12px 0">Nessuna cosa da fare in questa stanza.</p></div>' : ''}
     ${gruppi.map((g) => `
       <h2>${URG[g.u].etichetta}</h2>
@@ -505,6 +558,10 @@ function riallineaSpesa() {
   let cambiato = false;
   for (const s of dati.scorte) {
     const sue = dati.spesa.filter((x) => x.scortaId === s.id);
+    // Se la scorta è stata rinominata (anche dall'altro telefono) le sue voci ne prendono il nome.
+    for (const x of sue) {
+      if (x.nome !== s.nome) { x.nome = s.nome; cambiato = true; }
+    }
     if (s.quantita > SOGLIA_SPESA) {
       const tolte = sue.filter((x) => x.tolto);
       if (tolte.length) {
@@ -529,10 +586,11 @@ function riallineaSpesa() {
 }
 
 function rigaScorta(s, conElimina = true) {
+  if (inModifica('scorta', s.id)) return htmlModifica('scorta', s.id, s.nome);
   const bassa = s.quantita <= s.minimo;
   return `<div class="riga scorta ${bassa ? 'bassa' : ''}">
     <div class="info">
-      <span class="titolo">${esc(s.nome)}</span>
+      <span class="titolo"><button class="testo modificabile" data-action="modifica-inizia" data-tipo="scorta" data-id="${s.id}" aria-label="Correggi il nome: ${esc(s.nome)}">${esc(s.nome)}</button></span>
       <span class="sec">${esc(s.categoria || '')}${s.categoria ? ' · ' : ''}minimo ${s.minimo}${s.unita ? ' ' + esc(s.unita) : ''}</span>
     </div>
     <button class="tondo" data-action="meno" data-id="${s.id}" aria-label="Diminuisci ${esc(s.nome)}">−</button>
@@ -587,11 +645,12 @@ function renderScorte() {
 }
 
 function rigaSpesa(x) {
+  if (inModifica('spesa', x.id)) return htmlModifica('spesa', x.id, x.nome);
   const s = x.scortaId ? trova(dati.scorte, x.scortaId) : null;
   const sotto = s ? `In dispensa: ${s.quantita}${s.unita ? ' ' + s.unita : ''}` : x.unita;
   return `<div class="riga att ${x.comprato ? 'fatta' : ''}">
     <button class="check" data-action="spesa-toggle" data-id="${x.id}" aria-label="${x.comprato ? 'Rimetti in lista' : 'Segna come comprato'}: ${esc(x.nome)}">${x.comprato ? '✓' : ''}</button>
-    <span class="titolo"><span class="testo">${esc(x.nome)}</span>${sotto ? `<small>${esc(sotto)}</small>` : ''}</span>
+    <span class="titolo"><button class="testo modificabile" data-action="modifica-inizia" data-tipo="spesa" data-id="${x.id}" aria-label="Correggi il nome: ${esc(x.nome)}">${esc(x.nome)}</button>${sotto ? `<small>${esc(sotto)}</small>` : ''}</span>
     ${x.comprato
       ? `<span class="qta">× ${x.quantita}</span>`
       : `<button class="tondo" data-action="spesa-meno" data-id="${x.id}" aria-label="Diminuisci ${esc(x.nome)}">−</button>
@@ -666,6 +725,8 @@ document.addEventListener('click', (e) => {
 
   const id = t.dataset.id;
   switch (t.dataset.action) {
+    case 'modifica-inizia': modifica = { tipo: t.dataset.tipo, id }; render(); focusModifica(); return;
+    case 'modifica-annulla': modifica = null; render(); return;
     case 'toggle': {
       const a = trova(dati.attivita, id);
       if (a && a.ripeti) a.fattaIl = statoAttivita(a) === 'fatta' ? '' : oggi(); // ripetuto: vale per questo giro
@@ -771,6 +832,11 @@ document.addEventListener('submit', (e) => {
       unita: String(d.unita || '').trim(),
     };
     dati.scorte.push(nuova);
+  } else if (f.classList.contains('modifica')) {
+    const nuovo = String(d.testo || '').replace(/\s+/g, ' ').trim();
+    if (!nuovo) return; // il campo resta aperto
+    rinomina(f.dataset.tipo, f.dataset.id, nuovo);
+    modifica = null;
   } else if (f.id === 'formSpesa') {
     const nome = String(d.nome || '').trim();
     if (!nome) return;
@@ -797,6 +863,14 @@ document.addEventListener('submit', (e) => {
   }
   salva();
   render();
+});
+
+// Durante la correzione di un nome: il testo scritto si ricorda, Esc annulla.
+document.addEventListener('input', (e) => {
+  if (modifica && e.target.closest && e.target.closest('form.modifica')) modifica.testo = e.target.value;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modifica) { modifica = null; render(); }
 });
 
 // Il campo "Prima volta" serve solo se l'impegno si ripete.
