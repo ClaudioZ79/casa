@@ -34,6 +34,18 @@ chi accede vede le stesse liste e le modifiche arrivano subito agli altri telefo
 - **Importa JSON** con la condivisione attiva sostituisce le liste per tutti.
 - Con la condivisione attiva la sezione Google Drive sparisce, per evitare di sovrascrivere le liste con una copia vecchia.
 
+## Decidere cosa va nella lista della spesa
+
+Su ogni scorta (scheda Scorte) ci sono due pulsanti:
+
+- **Aggiungi alla spesa**: mette l'articolo in lista adesso, anche se la scorta non è bassa. Se è già in lista
+  mostra "In lista della spesa"; se l'avevi tolto a mano, lo rimette.
+- **Non aggiungere**: l'articolo non entra più da solo in lista e le sue voci ancora da comprare spariscono.
+  Premuto di nuovo torna automatico. "Aggiungi alla spesa" funziona comunque, una volta sola.
+
+Il campo `nonInLista` compare sulla scorta solo quando è attivo. Le voci aggiunte a mano non seguono la quantità
+della scorta, quelle automatiche sì.
+
 ## Correggere i nomi
 
 Toccando il nome di un impegno, di una scorta o di una voce della spesa la riga diventa un campo con **Salva** e

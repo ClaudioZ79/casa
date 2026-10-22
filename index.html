@@ -127,6 +127,15 @@
     background: rgba(120, 120, 128, .12); font: inherit; color: inherit;
   }
   .primario.piccolo { padding: 10px 16px; }
+
+  /* Su ogni scorta: due pulsanti per decidere se va nella lista della spesa */
+  .riga.scorta { flex-wrap: wrap; }
+  .azioni-spesa { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: 8px; padding: 0 0 4px; }
+  .az { border: 0; border-radius: 999px; padding: 7px 14px; min-height: 34px; font-size: 13px; font-weight: 500; background: rgba(120, 120, 128, .14); color: var(--accent); }
+  span.az { display: inline-flex; align-items: center; }
+  .az.attiva { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+  .az.no { color: var(--sec); }
+  .az.no.attiva { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); }
   .ripeti { display: block; border: 0; background: none; padding: 6px 0 2px; font-size: 13px; color: var(--sec); text-align: left; }
   .ripeti.attiva { color: var(--accent); }
   .del { border: 0; background: none; color: var(--red); font-size: 22px; padding: 4px 8px; line-height: 1; }
@@ -570,6 +579,7 @@ function riallineaSpesa() {
       }
       continue;
     }
+    if (s.nonInLista) continue; // l'hai escluso col pulsante "Non aggiungere": non entra da solo in lista
     const aperta = sue.find((x) => !x.comprato);
     if (aperta) {
       const q = pezziSuggeriti(s);
@@ -585,9 +595,37 @@ function riallineaSpesa() {
   return cambiato;
 }
 
+// La scorta ha una voce ancora da comprare in lista (né già comprata né tolta a mano)?
+const inListaScorta = (s) => dati.spesa.some((x) => x.scortaId === s.id && !x.comprato && !x.tolto);
+
+// Pulsante "Aggiungi alla spesa": la mette in lista adesso, anche se la scorta non è bassa.
+function aggiungiScortaAllaSpesa(s) {
+  if (inListaScorta(s)) return;
+  const tolta = dati.spesa.find((x) => x.scortaId === s.id && !x.comprato && x.tolto);
+  if (tolta) { delete tolta.tolto; return; } // era stata tolta a mano: la rimetto
+  dati.spesa.push({
+    id: uid(), nome: s.nome, quantita: pezziSuggeriti(s), unita: s.unita || '',
+    comprato: false, scortaId: s.id, creataIl: adesso(),
+  });
+}
+
+// Pulsante "Non aggiungere": la scorta non entra più da sola in lista e le sue voci ancora da comprare spariscono.
+// Premuto di nuovo torna automatica. "Aggiungi alla spesa" funziona comunque, una volta sola.
+function escludiScortaDallaSpesa(s) {
+  if (s.nonInLista) { delete s.nonInLista; return; }
+  s.nonInLista = true;
+  dati.spesa = dati.spesa.filter((x) => !(x.scortaId === s.id && !x.comprato));
+}
+
 function rigaScorta(s, conElimina = true) {
   if (inModifica('scorta', s.id)) return htmlModifica('scorta', s.id, s.nome);
   const bassa = s.quantita <= s.minimo;
+  const azioni = conElimina ? `<div class="azioni-spesa">
+      ${inListaScorta(s)
+        ? '<span class="az attiva">✓ In lista della spesa</span>'
+        : `<button class="az" data-action="spesa-aggiungi" data-id="${s.id}">🛒 Aggiungi alla spesa</button>`}
+      <button class="az no ${s.nonInLista ? 'attiva' : ''}" data-action="spesa-escludi" data-id="${s.id}" aria-pressed="${s.nonInLista ? 'true' : 'false'}">${s.nonInLista ? '🚫 Non aggiungere ✓' : 'Non aggiungere'}</button>
+    </div>` : '';
   return `<div class="riga scorta ${bassa ? 'bassa' : ''}">
     <div class="info">
       <span class="titolo"><button class="testo modificabile" data-action="modifica-inizia" data-tipo="scorta" data-id="${s.id}" aria-label="Correggi il nome: ${esc(s.nome)}">${esc(s.nome)}</button></span>
@@ -597,6 +635,7 @@ function rigaScorta(s, conElimina = true) {
     <span class="qta">${s.quantita}</span>
     <button class="tondo primo" data-action="piu" data-id="${s.id}" aria-label="Aumenta ${esc(s.nome)}">+</button>
     ${conElimina ? `<button class="del" data-action="elimina-scorta" data-id="${s.id}" aria-label="Elimina ${esc(s.nome)}">×</button>` : ''}
+    ${azioni}
   </div>`;
 }
 
@@ -615,7 +654,7 @@ function renderScorte() {
   $('#scorte').innerHTML = `
     <h1>Scorte</h1>
     <div class="card" style="padding:14px">
-      <p style="margin:0 0 6px">Quando un articolo scende a ${SOGLIA_SPESA} unità o meno, finisce da solo nella <b>lista della spesa</b>.</p>
+      <p style="margin:0 0 6px">Quando un articolo scende a ${SOGLIA_SPESA} unità o meno, finisce da solo nella <b>lista della spesa</b>. Con <b>Aggiungi alla spesa</b> lo metti tu, con <b>Non aggiungere</b> non entra più da solo.</p>
       <button class="link" data-tab="spesa">${daComprare ? `Apri la lista della spesa (${daComprare} da comprare) ›` : 'Apri la lista della spesa ›'}</button>
     </div>
 
@@ -761,6 +800,8 @@ document.addEventListener('click', (e) => {
     }
     case 'piu': { const s = trova(dati.scorte, id); if (s) s.quantita += 1; break; }
     case 'elimina-scorta': dati.scorte = dati.scorte.filter((s) => s.id !== id); break;
+    case 'spesa-aggiungi': { const s = trova(dati.scorte, id); if (s) aggiungiScortaAllaSpesa(s); break; }
+    case 'spesa-escludi': { const s = trova(dati.scorte, id); if (s) escludiScortaDallaSpesa(s); break; }
     case 'spesa-toggle': {
       // Se l'articolo viene dalla dispensa, comprarlo ne aumenta la scorta (e rimetterlo in lista la riporta indietro).
       const x = trova(dati.spesa, id);
@@ -948,6 +989,8 @@ function normalizza(j) {
       quantita: Math.max(0, parseInt(s.quantita, 10) || 0),
       minimo: Math.max(0, parseInt(s.minimo, 10) || 0),
       unita: String(s.unita || ''),
+      // Presente solo se hai premuto "Non aggiungere", così le scorte normali restano uguali.
+      ...(s.nonInLista ? { nonInLista: true } : {}),
     })),
     spesa: (Array.isArray(j.spesa) ? j.spesa : []).map((x) => ({
       id: x.id || uid(),
