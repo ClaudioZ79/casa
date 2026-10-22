@@ -87,6 +87,16 @@
     width: 100%; background: none; border: 0; text-align: left; padding: 12px 0; min-height: 44px;
   }
   .stanza-btn + .riga { border-top: .5px solid var(--sep); }
+  .gruppo + .gruppo { border-top: .5px solid var(--sep); }
+  .gruppo-btn {
+    display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0;
+    text-align: left; padding: 12px 0; min-height: 44px; font-weight: 600;
+  }
+  .gruppo-btn .freccia { color: var(--sec); transition: transform .15s; display: inline-block; }
+  .gruppo-btn[aria-expanded="true"] .freccia { transform: rotate(90deg); }
+  .gruppo-btn .nome { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .gruppo-btn .conta { font-weight: 400; font-size: 14px; color: var(--sec); }
+  .gruppo-btn .conta.bassa { color: var(--red); }
   .titolo { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .link { color: var(--accent); background: none; border: 0; padding: 0; }
   .link input { display: none; }
@@ -649,6 +659,44 @@ function copiaSpesa() {
   }
 }
 
+// Scorte raggruppate per categoria (la "stanza": Cucina, Bagno…). Gruppi comprimibili; lo stato aperto/chiuso
+// resta sul dispositivo (non va nel database). Senza categorie la lista resta piatta.
+const CHIAVE_GRUPPI = 'casa.scorteChiuse';
+const chiaviGruppo = (s) => String(s.categoria || '').trim().toLowerCase();
+function gruppiChiusi() {
+  try { return new Set(JSON.parse(localStorage.getItem(CHIAVE_GRUPPI) || '[]')); } catch (e) { return new Set(); }
+}
+function alternaGruppo(k) {
+  const c = gruppiChiusi();
+  if (c.has(k)) c.delete(k); else c.add(k);
+  try { localStorage.setItem(CHIAVE_GRUPPI, JSON.stringify([...c])); } catch (e) { /* ignora */ }
+}
+
+function htmlScorteRaggruppate() {
+  if (!dati.scorte.length) return '<p class="vuoto" style="padding:12px 0">Nessun articolo.</p>';
+  const gruppi = new Map();
+  dati.scorte.forEach((s) => {
+    const k = chiaviGruppo(s);
+    if (!gruppi.has(k)) gruppi.set(k, { k, nome: String(s.categoria || '').trim() || 'Senza categoria', voci: [] });
+    gruppi.get(k).voci.push(s);
+  });
+  if (gruppi.size === 1 && gruppi.has('')) return dati.scorte.map((s) => rigaScorta(s)).join('');
+  const chiusi = gruppiChiusi();
+  const ordine = [...gruppi.values()].sort((a, b) => (a.k === '') - (b.k === '') || a.nome.localeCompare(b.nome, 'it'));
+  return ordine.map((g) => {
+    const aperto = !chiusi.has(g.k);
+    const basse = g.voci.filter((s) => s.quantita <= s.minimo).length;
+    return `<div class="gruppo">
+      <button class="gruppo-btn" data-action="scorte-gruppo" data-gruppo="${esc(g.k)}" aria-expanded="${aperto}">
+        <span class="freccia" aria-hidden="true">›</span>
+        <span class="nome">${esc(g.nome)}</span>
+        <span class="conta ${basse ? 'bassa' : ''}">${g.voci.length}${basse ? ` · ${basse} in esaurimento` : ''}</span>
+      </button>
+      ${aperto ? g.voci.map((s) => rigaScorta(s)).join('') : ''}
+    </div>`;
+  }).join('');
+}
+
 function renderScorte() {
   const daComprare = aperteSpesa().length;
   $('#scorte').innerHTML = `
@@ -660,7 +708,7 @@ function renderScorte() {
 
     <h2>Tutte le scorte</h2>
     <div class="card">
-      ${dati.scorte.length ? dati.scorte.map((s) => rigaScorta(s)).join('') : '<p class="vuoto" style="padding:12px 0">Nessun articolo.</p>'}
+      ${htmlScorteRaggruppate()}
     </div>
 
     <h2>Nuovo articolo</h2>
@@ -828,6 +876,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'esporta': esporta(); return;
     case 'copia-spesa': copiaSpesa(); return;
+    case 'scorte-gruppo': alternaGruppo(t.dataset.gruppo); render(); return;
     case 'drive-collega': eseguiDrive(driveAccesso); return;
     case 'drive-carica': eseguiDrive(driveCarica); return;
     case 'drive-scarica':
