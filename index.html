@@ -216,6 +216,22 @@
   }
   .tab .ico { font-size: 22px; line-height: 1.1; }
   .tab.on { color: var(--accent); background: rgba(120, 120, 128, .14); }
+  .annulla {
+    position: fixed; left: 12px; right: 12px; z-index: 5;
+    bottom: calc(86px + env(safe-area-inset-bottom));
+    max-width: 616px; margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 10px 10px 16px; border-radius: 18px;
+    background: var(--card);
+    backdrop-filter: blur(28px) saturate(200%);
+    -webkit-backdrop-filter: blur(28px) saturate(200%);
+    border: .5px solid var(--sep);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .18);
+    font-size: 15px;
+  }
+  .annulla[hidden] { display: none; }
+  .annulla button { border: 0; background: none; color: var(--accent); font-size: 15px; font-weight: 600; padding: 6px 10px; }
+  .cerca { width: 100%; margin: 0 0 8px; font-size: 16px; padding: 10px 12px; border-radius: 12px; border: .5px solid var(--sep); background: var(--card); color: var(--text); }
 </style>
 </head>
 <body>
@@ -225,6 +241,10 @@
   <section id="scorte" class="pagina" hidden></section>
   <section id="spesa" class="pagina" hidden></section>
 </main>
+
+<div class="annulla" id="annulla" role="status" aria-live="polite" hidden>
+  <span id="annullaMsg"></span><button data-action="annulla">Annulla</button>
+</div>
 
 <nav class="tabbar">
   <button class="tab" data-tab="generale"><span class="ico">🏠</span><span>Generale</span></button>
@@ -672,19 +692,28 @@ function alternaGruppo(k) {
   try { localStorage.setItem(CHIAVE_GRUPPI, JSON.stringify([...c])); } catch (e) { /* ignora */ }
 }
 
+let ricercaScorte = '';
+const corrisponde = (s) => {
+  const q = ricercaScorte.trim().toLowerCase();
+  return !q || (s.nome + ' ' + (s.categoria || '')).toLowerCase().includes(q);
+};
+
 function htmlScorteRaggruppate() {
   if (!dati.scorte.length) return '<p class="vuoto" style="padding:12px 0">Nessun articolo.</p>';
+  const cerca = ricercaScorte.trim() !== '';
+  const visibili = dati.scorte.filter(corrisponde);
+  if (!visibili.length) return '<p class="vuoto" style="padding:12px 0">Nessun articolo trovato.</p>';
   const gruppi = new Map();
-  dati.scorte.forEach((s) => {
+  visibili.forEach((s) => {
     const k = chiaviGruppo(s);
     if (!gruppi.has(k)) gruppi.set(k, { k, nome: String(s.categoria || '').trim() || 'Senza categoria', voci: [] });
     gruppi.get(k).voci.push(s);
   });
-  if (gruppi.size === 1 && gruppi.has('')) return dati.scorte.map((s) => rigaScorta(s)).join('');
+  if (gruppi.size === 1 && gruppi.has('')) return visibili.map((s) => rigaScorta(s)).join('');
   const chiusi = gruppiChiusi();
   const ordine = [...gruppi.values()].sort((a, b) => (a.k === '') - (b.k === '') || a.nome.localeCompare(b.nome, 'it'));
   return ordine.map((g) => {
-    const aperto = !chiusi.has(g.k);
+    const aperto = cerca || !chiusi.has(g.k); // cercando, i gruppi si aprono da soli
     const basse = g.voci.filter((s) => s.quantita <= s.minimo).length;
     return `<div class="gruppo">
       <button class="gruppo-btn" data-action="scorte-gruppo" data-gruppo="${esc(g.k)}" aria-expanded="${aperto}">
@@ -707,7 +736,8 @@ function renderScorte() {
     </div>
 
     <h2>Tutte le scorte</h2>
-    <div class="card">
+    <input class="cerca" id="cercaScorte" type="search" placeholder="Cerca un articolo" aria-label="Cerca tra le scorte" value="${esc(ricercaScorte)}" maxlength="80">
+    <div class="card" id="listaScorte">
       ${htmlScorteRaggruppate()}
     </div>
 
@@ -811,7 +841,10 @@ document.addEventListener('click', (e) => {
   if (t.dataset.stanza) { stanzaSel = t.dataset.stanza; render(); return; }
 
   const id = t.dataset.id;
+  const prima = JSON.parse(JSON.stringify(dati));
+  let avviso = ''; // se valorizzato, dopo l'azione compare "Annulla"
   switch (t.dataset.action) {
+    case 'annulla': ripristina(); return;
     case 'modifica-inizia': modifica = { tipo: t.dataset.tipo, id }; render(); focusModifica(); return;
     case 'modifica-annulla': modifica = null; render(); return;
     case 'toggle': {
@@ -821,7 +854,7 @@ document.addEventListener('click', (e) => {
       break;
     }
     case 'ripeti': { const a = trova(dati.attivita, id); if (a) cambiaRipetizione(a); break; }
-    case 'elimina': dati.attivita = dati.attivita.filter((a) => a.id !== id); break;
+    case 'elimina': dati.attivita = dati.attivita.filter((a) => a.id !== id); avviso = 'Impegno eliminato'; break;
     case 'urgenza': {
       // 1 stella → 2 → 3 → di nuovo 1: l'impegno passa da solo nel gruppo giusto
       const a = trova(dati.attivita, id);
@@ -838,8 +871,8 @@ document.addEventListener('click', (e) => {
       break;
     }
     case 'pulisci':
-      if (!confirm('Rimuovere le attività completate di questa stanza?')) return;
       dati.attivita = dati.attivita.filter((a) => !(a.fatta && a.stanza === stanzaSel));
+      avviso = 'Impegni completati rimossi';
       break;
     case 'meno': {
       const s = trova(dati.scorte, id);
@@ -847,7 +880,7 @@ document.addEventListener('click', (e) => {
       break;
     }
     case 'piu': { const s = trova(dati.scorte, id); if (s) s.quantita += 1; break; }
-    case 'elimina-scorta': dati.scorte = dati.scorte.filter((s) => s.id !== id); break;
+    case 'elimina-scorta': dati.scorte = dati.scorte.filter((s) => s.id !== id); avviso = 'Articolo eliminato'; break;
     case 'spesa-aggiungi': { const s = trova(dati.scorte, id); if (s) aggiungiScortaAllaSpesa(s); break; }
     case 'spesa-escludi': { const s = trova(dati.scorte, id); if (s) escludiScortaDallaSpesa(s); break; }
     case 'spesa-toggle': {
@@ -867,12 +900,13 @@ document.addEventListener('click', (e) => {
       const s = x && x.scortaId ? trova(dati.scorte, x.scortaId) : null;
       if (x && s && !x.comprato && s.quantita <= SOGLIA_SPESA) x.tolto = true; // resta nascosta, non rientra da sola
       else dati.spesa = dati.spesa.filter((y) => y.id !== id);
+      avviso = 'Tolto dalla lista';
       break;
     }
     case 'spesa-rimetti': dati.spesa.forEach((x) => { delete x.tolto; }); break;
     case 'spesa-pulisci':
-      if (!confirm('Togliere dalla lista gli articoli già comprati?')) return;
       dati.spesa = dati.spesa.filter((x) => !x.comprato);
+      avviso = 'Articoli comprati tolti';
       break;
     case 'esporta': esporta(); return;
     case 'copia-spesa': copiaSpesa(); return;
@@ -890,6 +924,40 @@ document.addEventListener('click', (e) => {
   }
   salva();
   render();
+  if (avviso) mostraAnnulla(avviso, prima);
+});
+
+// Annulla: dopo un'eliminazione compare per 6 secondi. Rimette solo le voci toccate dall'azione,
+// così non cancella ciò che nel frattempo ha cambiato l'altro telefono.
+let annullaCambi = [];
+let annullaTimer = 0;
+function mostraAnnulla(msg, prima) {
+  annullaCambi = [];
+  for (const t of ['attivita', 'scorte', 'spesa']) {
+    const ora = new Map(dati[t].map((x) => [x.id, JSON.stringify(x)]));
+    for (const x of prima[t]) if (ora.get(x.id) !== JSON.stringify(x)) annullaCambi.push([t, x]);
+  }
+  if (!annullaCambi.length) return;
+  $('#annullaMsg').textContent = msg;
+  $('#annulla').hidden = false;
+  clearTimeout(annullaTimer);
+  annullaTimer = setTimeout(nascondiAnnulla, 6000);
+}
+function nascondiAnnulla() { $('#annulla').hidden = true; annullaCambi = []; }
+function ripristina() {
+  for (const [t, x] of annullaCambi) {
+    const i = dati[t].findIndex((y) => y.id === x.id);
+    if (i >= 0) dati[t][i] = x; else dati[t].push(x);
+  }
+  nascondiAnnulla();
+  salva();
+  render();
+}
+
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'cercaScorte') return;
+  ricercaScorte = e.target.value;
+  $('#listaScorte').innerHTML = htmlScorteRaggruppate(); // solo l'elenco: il campo non perde il focus
 });
 
 document.addEventListener('submit', (e) => {
