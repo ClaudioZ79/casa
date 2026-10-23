@@ -531,7 +531,7 @@ function renderStanze() {
     <h2>Nuova attività</h2>
     <form class="card form" id="formAtt">
       <label class="campo"><span>Cosa va fatto</span>
-        <input name="titolo" placeholder="Es. Pulire il forno" required></label>
+        <input name="titolo" placeholder="Es. Pulire il forno" maxlength="80" required></label>
       <label class="campo"><span>Quanto è urgente</span>
         <select name="urgenza">
           <option value="3">Urgente (3 stelle)</option>
@@ -714,9 +714,9 @@ function renderScorte() {
     <h2>Nuovo articolo</h2>
     <form class="card form" id="formScorta">
       <label class="campo"><span>Nome dell'articolo</span>
-        <input name="nome" placeholder="Es. Detersivo piatti" required></label>
+        <input name="nome" placeholder="Es. Detersivo piatti" maxlength="80" required></label>
       <label class="campo"><span>Categoria (facoltativa)</span>
-        <input name="categoria" placeholder="Es. Cucina, Bagno, Pulizia"></label>
+        <input name="categoria" placeholder="Es. Cucina, Bagno, Pulizia" maxlength="80"></label>
       <div class="due">
         <label class="campo"><span>Quanti ne hai adesso</span>
           <input name="quantita" type="number" min="0" value="0" inputmode="numeric"></label>
@@ -725,7 +725,7 @@ function renderScorte() {
       </div>
       <p class="sec" style="margin:-4px 4px 0">La scorta minima serve a evidenziare in rosso l'articolo. In lista della spesa finisce con ${SOGLIA_SPESA} unità o meno.</p>
       <label class="campo"><span>Unità di misura (facoltativa)</span>
-        <input name="unita" placeholder="Es. pz, kg, l, rotoli"></label>
+        <input name="unita" placeholder="Es. pz, kg, l, rotoli" maxlength="80"></label>
       <button class="primario" type="submit">Aggiungi</button>
     </form>
   `;
@@ -771,13 +771,13 @@ function renderSpesa() {
     <h2>Aggiungi alla lista</h2>
     <form class="card form" id="formSpesa">
       <label class="campo"><span>Cosa devi comprare</span>
-        <input name="nome" list="elencoScorte" placeholder="Es. Latte" autocomplete="off" required></label>
+        <input name="nome" list="elencoScorte" placeholder="Es. Latte" autocomplete="off" maxlength="80" required></label>
       <datalist id="elencoScorte">${dati.scorte.map((s) => `<option value="${esc(s.nome)}"></option>`).join('')}</datalist>
       <div class="due">
         <label class="campo"><span>Quanti</span>
           <input name="quantita" type="number" min="1" value="1" inputmode="numeric"></label>
         <label class="campo"><span>Unità (facoltativa)</span>
-          <input name="unita" placeholder="Es. pz, kg"></label>
+          <input name="unita" placeholder="Es. pz, kg" maxlength="80"></label>
       </div>
       <button class="primario" type="submit">Aggiungi alla lista</button>
     </form>
@@ -1020,7 +1020,7 @@ function normalizza(j) {
   return {
     attivita: j.attivita.map((a) => ({
       id: a.id || uid(),
-      titolo: String(a.titolo || ''),
+      titolo: String(a.titolo || '').slice(0, 80),
       stanza: String(a.stanza || 'sala'),
       urgenza: Number(a.urgenza) || 1,
       fatta: Boolean(a.fatta),
@@ -1033,19 +1033,19 @@ function normalizza(j) {
     })),
     scorte: j.scorte.map((s) => ({
       id: s.id || uid(),
-      nome: String(s.nome || ''),
-      categoria: String(s.categoria || ''),
+      nome: String(s.nome || '').slice(0, 80),
+      categoria: String(s.categoria || '').slice(0, 80),
       quantita: Math.max(0, parseInt(s.quantita, 10) || 0),
       minimo: Math.max(0, parseInt(s.minimo, 10) || 0),
-      unita: String(s.unita || ''),
+      unita: String(s.unita || '').slice(0, 80),
       // Presente solo se hai premuto "Non aggiungere", così le scorte normali restano uguali.
       ...(s.nonInLista ? { nonInLista: true } : {}),
     })),
     spesa: (Array.isArray(j.spesa) ? j.spesa : []).map((x) => ({
       id: x.id || uid(),
-      nome: String(x.nome || ''),
+      nome: String(x.nome || '').slice(0, 80),
       quantita: Math.max(1, parseInt(x.quantita, 10) || 1),
-      unita: String(x.unita || ''),
+      unita: String(x.unita || '').slice(0, 80),
       comprato: Boolean(x.comprato),
       scortaId: String(x.scortaId || ''),
       creataIl: x.creataIl || adesso(),
