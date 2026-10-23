@@ -11,7 +11,7 @@ Nessuna dipendenza esterna: è un solo file HTML con CSS e JavaScript inline.
 - **Esporta JSON** e **Importa JSON** nella scheda Generale fanno il backup a mano. Il formato è lo stesso
   dell'app Swift (`attivita` e `scorte`), quindi l'import dalla dashboard web si fa con lo stesso file.
 - Safari può cancellare i dati di un sito non aperto per alcune settimane: fai un export ogni tanto.
-  La sincronizzazione su Google Drive è il prossimo passo.
+  Con la condivisione attiva i dati stanno anche su Firebase.
 
 ## Condivisione tra Claudio e Monica (Firebase)
 
@@ -32,7 +32,6 @@ chi accede vede le stesse liste e le modifiche arrivano subito agli altri telefo
 - **Accesso Google**: l'app Google Cloud è in stato *Test*, quindi possono accedere solo gli utenti di prova
   (i due indirizzi sopra). Per aggiungerne altri: Google Auth Platform → Pubblico → Utenti di prova.
 - **Importa JSON** con la condivisione attiva sostituisce le liste per tutti.
-- Con la condivisione attiva la sezione Google Drive sparisce, per evitare di sovrascrivere le liste con una copia vecchia.
 
 ## Decidere cosa va nella lista della spesa
 
@@ -71,26 +70,6 @@ l'impegno da solo. Si può cambiare anche dopo, toccando la scritta sotto il tit
 - Il cambio di giorno si controlla ogni minuto e quando si riapre l'app, quindi a mezzanotte la lista si aggiorna da sola.
 - Non ci sono notifiche: l'app non può avvisarti, i ripetuti compaiono quando la apri.
 
-## Google Drive (copia personale, senza condivisione)
-
-La scheda Generale ha una sezione **Google Drive**: *Collega*, *Carica su Drive*, *Scarica da Drive*, *Scollega*.
-Il file `casa.json` finisce in `appDataFolder`, una cartella nascosta visibile solo a questa app (ambito `drive.appdata`).
-Il formato è lo stesso dell'app Swift, quindi i due client leggono lo stesso file.
-
-Per attivarla serve un ID client di tipo **Applicazione web** nel progetto Google Cloud `casa-511922`
-(quello di tipo iOS non funziona sul web):
-
-1. Google Cloud → **Google Auth Platform → Client → Crea client → Applicazione web**.
-2. In **Origini JavaScript autorizzate** inserisci solo l'origine, senza percorso:
-   `https://<utente>.github.io` (e `http://localhost:8080` per provare in locale).
-3. Copia l'ID client e incollalo in `GOOGLE_CLIENT_ID` in `index.html` (già fatto per il client "Casa Web").
-   Il segreto client mostrato da Google non serve e non va mai scritto nel codice.
-
-Note:
-- L'app resta in stato **Test**: solo gli utenti di prova possono accedere, e Google mostra l'avviso "app non verificata".
-- Il token di accesso dura circa un'ora e non viene salvato: al riavvio serve un nuovo tocco su *Carica* o *Scarica*.
-- *Scarica da Drive* sostituisce i dati di questo dispositivo.
-
 ## Pubblicazione su GitHub Pages
 
 GitHub Pages pubblica la cartella radice del ramo oppure la cartella `docs/`. Per usarla:
@@ -107,4 +86,3 @@ GitHub Pages pubblica la cartella radice del ramo oppure la cartella `docs/`. Pe
   ricavate dall'icona dell'app Swift. Se cambi l'icona, rigenerale con `sips -z <px> <px>`.
   Dopo averla cambiata, su iPhone rimuovi la vecchia icona dalla Home e aggiungila di nuovo.
 - Icone in stile iOS: al momento le stanze usano emoji. Si possono sostituire con SVG.
-- Sincronizzazione con Google Drive (OAuth, ID client da creare su Google Cloud).

@@ -11,7 +11,6 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root {
     --bg: #f2f2f7;
@@ -434,17 +433,6 @@ function renderGenerale() {
       &nbsp;·&nbsp;
       <label class="link">Importa JSON<input type="file" accept="application/json,.json" id="importa"></label>
     </div>
-    ${nube.stato === 'attiva' ? '' : `<h2>Google Drive</h2>
-    <div class="card" style="padding:14px">
-      ${driveCollegato()
-        ? `<button class="link" data-action="drive-carica" ${driveOccupato ? 'disabled' : ''}>Carica su Drive</button>
-           &nbsp;·&nbsp;
-           <button class="link" data-action="drive-scarica" ${driveOccupato ? 'disabled' : ''}>Scarica da Drive</button>
-           &nbsp;·&nbsp;
-           <button class="link" data-action="drive-scollega" style="color:var(--red)" ${driveOccupato ? 'disabled' : ''}>Scollega</button>`
-        : `<button class="link" data-action="drive-collega" ${driveOccupato ? 'disabled' : ''}>Collega Google Drive</button>`}
-      ${driveMsg ? `<p class="sec" style="margin:10px 0 0">${esc(driveMsg)}</p>` : ''}
-    </div>`}
   `;
 }
 
@@ -911,13 +899,6 @@ document.addEventListener('click', (e) => {
     case 'esporta': esporta(); return;
     case 'copia-spesa': copiaSpesa(); return;
     case 'scorte-gruppo': alternaGruppo(t.dataset.gruppo); render(); return;
-    case 'drive-collega': eseguiDrive(driveAccesso); return;
-    case 'drive-carica': eseguiDrive(driveCarica); return;
-    case 'drive-scarica':
-      if (!confirm('Sostituire i dati di questo dispositivo con quelli salvati su Drive?')) return;
-      eseguiDrive(driveScarica);
-      return;
-    case 'drive-scollega': driveScollega(); return;
     case 'cloud-accedi': accediNube(); return;
     case 'cloud-esci': esciNube(); return;
     default: return;
@@ -1055,33 +1036,9 @@ document.addEventListener('change', (e) => {
     .catch(() => alert('File non valido: serve un export JSON di Casa.'));
 });
 
-/* ---------- Google Drive ----------
-   Il file casa.json sta in appDataFolder: una cartella nascosta, visibile solo a questa app.
-   Formato compatibile con l'app Swift (stesso file, stessi nomi dei campi). */
-
-// ID client OAuth di tipo "Applicazione web" (progetto Google Cloud casa-511922). Vedi README.
-const GOOGLE_CLIENT_ID = '144660060564-a08p9onsupgugqf0v9ogddbu9bhb10r9.apps.googleusercontent.com';
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
-const DRIVE_FILE = 'casa.json';
-const FLAG_DRIVE = 'casa.drive';
-
-let driveToken = null;
-let driveScade = 0;
-let driveMsg = '';
-let driveOccupato = false;
-let tokenClient = null;
-let accessoOk = null;
-let accessoKo = null;
+/* ---------- Importazione ed esportazione ---------- */
 
 const adesso = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-
-function driveCollegato() {
-  try { return localStorage.getItem(FLAG_DRIVE) === '1'; } catch (e) { return false; }
-}
-
-function impostaFlagDrive(v) {
-  try { v ? localStorage.setItem(FLAG_DRIVE, '1') : localStorage.removeItem(FLAG_DRIVE); } catch (e) { /* ignora */ }
-}
 
 function normalizza(j) {
   if (!j || !Array.isArray(j.attivita) || !Array.isArray(j.scorte)) throw new Error('formato non valido');
@@ -1122,90 +1079,6 @@ function normalizza(j) {
       ...(x.tolto ? { tolto: true } : {}),
     })),
   };
-}
-
-function driveAccesso() {
-  return new Promise((ok, ko) => {
-    if (driveToken && Date.now() < driveScade - 60000) { ok(driveToken); return; }
-    if (!GOOGLE_CLIENT_ID) { ko(new Error("Manca l'ID client Google nel codice (vedi README).")); return; }
-    if (!window.google || !google.accounts) { ko(new Error('Libreria Google non caricata: sei online?')); return; }
-
-    accessoOk = ok;
-    accessoKo = ko;
-    if (!tokenClient) {
-      tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: DRIVE_SCOPE,
-        callback: (r) => {
-          if (r.error) { accessoKo(new Error(r.error_description || r.error)); return; }
-          driveToken = r.access_token;
-          driveScade = Date.now() + (Number(r.expires_in) || 3600) * 1000;
-          impostaFlagDrive(true);
-          accessoOk(driveToken);
-        },
-        error_callback: (e) => accessoKo(new Error('Accesso annullato o bloccato (' + (e.type || 'errore') + ').')),
-      });
-    }
-    tokenClient.requestAccessToken({ prompt: driveCollegato() ? '' : 'consent' });
-  });
-}
-
-async function driveFetch(url, opzioni = {}) {
-  const token = await driveAccesso();
-  const r = await fetch(url, { ...opzioni, headers: { ...(opzioni.headers || {}), Authorization: 'Bearer ' + token } });
-  if (!r.ok) throw new Error('Errore di Google Drive (' + r.status + ').');
-  return r;
-}
-
-async function driveIdFile() {
-  const q = encodeURIComponent(`name='${DRIVE_FILE}' and trashed=false`);
-  const r = await driveFetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id)`);
-  const j = await r.json();
-  return j.files && j.files[0] ? j.files[0].id : null;
-}
-
-async function driveCarica() {
-  const id = await driveIdFile();
-  const meta = id ? { name: DRIVE_FILE } : { name: DRIVE_FILE, parents: ['appDataFolder'] };
-  const json = JSON.stringify({ versione: 1, attivita: dati.attivita, scorte: dati.scorte, spesa: dati.spesa });
-  const b = 'casa' + uid();
-  const corpo = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n`
-    + `--${b}\r\nContent-Type: application/json\r\n\r\n${json}\r\n--${b}--`;
-  await driveFetch(`https://www.googleapis.com/upload/drive/v3/files${id ? '/' + id : ''}?uploadType=multipart`, {
-    method: id ? 'PATCH' : 'POST',
-    headers: { 'Content-Type': 'multipart/related; boundary=' + b },
-    body: corpo,
-  });
-}
-
-async function driveScarica() {
-  const id = await driveIdFile();
-  if (!id) throw new Error('Nessun file su Drive: prima carica i dati.');
-  const r = await driveFetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
-  dati = normalizza(await r.json());
-  salva();
-}
-
-function driveScollega() {
-  if (driveToken && window.google && google.accounts) {
-    try { google.accounts.oauth2.revoke(driveToken, () => {}); } catch (e) { /* ignora */ }
-  }
-  driveToken = null;
-  driveScade = 0;
-  impostaFlagDrive(false);
-  driveMsg = 'Drive scollegato.';
-  render();
-}
-
-// Va chiamata direttamente dal gesto dell'utente (clic): il popup di Google lo richiede.
-function eseguiDrive(azione) {
-  driveOccupato = true;
-  driveMsg = '';
-  render();
-  azione()
-    .then(() => { driveMsg = 'Operazione completata.'; })
-    .catch((e) => { driveMsg = e.message || 'Operazione non riuscita.'; })
-    .finally(() => { driveOccupato = false; render(); });
 }
 
 /* ---------- Condivisione con Firebase ----------
