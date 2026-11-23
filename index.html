@@ -601,6 +601,8 @@ function riallineaSpesa() {
     }
     if (s.nonInLista) continue; // l'hai escluso col pulsante "Non aggiungere": non entra da solo in lista
     const aperta = sue.find((x) => !x.comprato);
+    // Comprata nell'app Spesa ma non ancora contata ("Fine spesa" la somma alla scorta): non ne serve un'altra.
+    if (!aperta && sue.some((x) => x.daAggiungere)) continue;
     if (aperta) {
       const q = pezziSuggeriti(s);
       if (aperta.auto && !aperta.tolto && aperta.quantita !== q) { aperta.quantita = q; cambiato = true; }
