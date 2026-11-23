@@ -563,8 +563,8 @@ function renderStanze() {
   `;
 }
 
-// Quando una scorta scende a questa quantità (o meno) entra da sola nella lista della spesa.
-const SOGLIA_SPESA = 2;
+// Quando una scorta arriva a questa quantità (zero: finita) entra da sola nella lista della spesa, non prima.
+const SOGLIA_SPESA = 0;
 
 // Voci da comprare: né già comprate né tolte a mano ("tolto" = nascosta ma ricordata, vedi sotto).
 const aperteSpesa = () => dati.spesa.filter((x) => !x.comprato && !x.tolto);
@@ -590,9 +590,11 @@ function riallineaSpesa() {
       if (x.nome !== s.nome) { x.nome = s.nome; cambiato = true; }
     }
     if (s.quantita > SOGLIA_SPESA) {
-      const tolte = sue.filter((x) => x.tolto);
-      if (tolte.length) {
-        dati.spesa = dati.spesa.filter((x) => !tolte.includes(x));
+      // Scorta non finita: via le voci tolte a mano e quelle automatiche ancora da comprare e mai modificate
+      // (vecchia soglia: erano entrate con 1-2 unità). Restano quelle messe da te o con quantità cambiata.
+      const via = sue.filter((x) => x.tolto || (x.auto && !x.comprato));
+      if (via.length) {
+        dati.spesa = dati.spesa.filter((x) => !via.includes(x));
         cambiato = true;
       }
       continue;
@@ -719,7 +721,7 @@ function renderScorte() {
   $('#scorte').innerHTML = `
     <h1>Scorte</h1>
     <div class="card" style="padding:14px">
-      <p style="margin:0 0 6px">Quando un articolo scende a ${SOGLIA_SPESA} unità o meno, finisce da solo nella <b>lista della spesa</b>. Con <b>Aggiungi alla spesa</b> lo metti tu, con <b>Non aggiungere</b> non entra più da solo.</p>
+      <p style="margin:0 0 6px">Quando un articolo è finito (a zero), finisce da solo nella <b>lista della spesa</b>. Con <b>Aggiungi alla spesa</b> lo metti tu, con <b>Non aggiungere</b> non entra più da solo.</p>
       <button class="link" data-tab="spesa">${daComprare ? `Apri la lista della spesa (${daComprare} da comprare) ›` : 'Apri la lista della spesa ›'}</button>
     </div>
 
@@ -741,7 +743,7 @@ function renderScorte() {
         <label class="campo"><span>Scorta minima</span>
           <input name="minimo" type="number" min="0" value="1" inputmode="numeric"></label>
       </div>
-      <p class="sec" style="margin:-4px 4px 0">La scorta minima serve a evidenziare in rosso l'articolo. In lista della spesa finisce con ${SOGLIA_SPESA} unità o meno.</p>
+      <p class="sec" style="margin:-4px 4px 0">La scorta minima serve a evidenziare in rosso l'articolo. In lista della spesa finisce solo quando è a zero.</p>
       <label class="campo"><span>Unità di misura (facoltativa)</span>
         <input name="unita" placeholder="Es. pz, kg, l, rotoli" maxlength="80"></label>
       <button class="primario" type="submit">Aggiungi</button>
